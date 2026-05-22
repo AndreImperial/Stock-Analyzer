@@ -20,7 +20,7 @@
         <form id="analyzeForm" class="search-form">
           <div class="field symbol-field">
             <label for="symbolInput">Symbol</label>
-            <input id="symbolInput" name="symbol" type="text" value="AAPL" autocomplete="off" placeholder="AAPL, SPY, BTC-USD, EURUSD=X, JFC.PS">
+            <input id="symbolInput" name="symbol" type="text" value="AAPL" autocomplete="off" placeholder="AAPL, SPY, BTC-USD, EURUSD=X">
             <div class="search-results" id="searchResults" hidden></div>
           </div>
           <div class="field">
@@ -47,9 +47,8 @@
         <div class="quick-row">
           <button data-symbol="AAPL">AAPL</button>
           <button data-symbol="SPY">SPY</button>
-          <button data-symbol="BTC-USD">BTC-USD</button>
-          <button data-symbol="EURUSD=X">EURUSD=X</button>
-          <button data-symbol="^GSPC">^GSPC</button>
+          <button data-symbol="BTC-USD">BTC</button>
+          <button data-symbol="EURUSD=X">EUR/USD</button>
           <button data-symbol="JFC.PS">JFC.PS</button>
         </div>
       </section>
@@ -57,70 +56,46 @@
       <section class="notice" id="notice" hidden></section>
 
       <section class="dashboard" id="dashboard" hidden>
-        <section class="analysis-layout">
-          <aside class="result-panel">
+        <section class="hero-result">
+          <div class="identity">
             <p class="label" id="assetType">Quote</p>
             <h1 id="assetName">AAPL</h1>
             <div class="price-row">
               <strong id="price">--</strong>
               <span id="change">--</span>
             </div>
+          </div>
 
-            <div class="rating-strip">
-              <div>
-                <span>Rating</span>
-                <strong id="rating">Neutral</strong>
-              </div>
-              <div>
-                <span>Total</span>
-                <strong id="scoreRing">0</strong>
-              </div>
-              <div>
-                <span>Fund</span>
-                <strong id="fundScore">0</strong>
-              </div>
-              <div>
-                <span>Tech</span>
-                <strong id="techScore">0</strong>
-              </div>
-            </div>
-
-            <h2 id="bottomLineHeadline">Summary</h2>
-            <p class="bottom-line-text" id="bottomLineText"></p>
-            <p class="missing-notes" id="missingNotes"></p>
-            <p class="caveat" id="caveat"></p>
-
-            <div class="risk-box">
-              <div class="risk-meter">
-                <span>Volatility</span>
-                <strong id="volatilityRisk">Unknown</strong>
-                <div class="meter-track"><i id="volatilityMeter"></i></div>
-                <small id="volatilityLabel">Not enough data</small>
-              </div>
-              <div class="risk-meter">
-                <span>Debt</span>
-                <strong id="debtRisk">Unknown</strong>
-                <div class="meter-track"><i id="debtMeter"></i></div>
-                <small id="debtLabel">Not available</small>
-              </div>
-            </div>
-          </aside>
-
-          <section class="chart-panel">
-            <div class="panel-head">
-              <h2 id="chartTitle">Chart</h2>
-              <span id="asOf"></span>
-            </div>
-            <div class="chart-controls" aria-label="Chart overlays">
-              <label><input type="checkbox" id="showSma50" checked> 50 SMA</label>
-              <label><input type="checkbox" id="showSma200" checked> 200 SMA</label>
-              <label><input type="checkbox" id="showRsi" checked> RSI</label>
-            </div>
-            <canvas id="priceChart" width="1200" height="430"></canvas>
-          </section>
+          <div class="simple-rating">
+            <span>Rating</span>
+            <strong id="rating">Neutral</strong>
+          </div>
         </section>
 
-        <section class="data-panel">
+        <section class="summary-panel">
+          <div class="panel-head">
+            <h2 id="bottomLineHeadline">Summary</h2>
+            <span class="status-pill" id="summarySource">Rules</span>
+          </div>
+          <p class="bottom-line-text" id="bottomLineText"></p>
+          <p class="missing-notes" id="missingNotes"></p>
+        </section>
+
+        <section class="chart-panel">
+          <div class="panel-head">
+            <h2 id="chartTitle">Chart</h2>
+            <span id="asOf"></span>
+          </div>
+          <div class="chart-controls" aria-label="Chart overlays">
+            <label><input type="checkbox" id="showSma50" checked> 50 SMA</label>
+            <label><input type="checkbox" id="showSma200"> 200 SMA</label>
+            <label><input type="checkbox" id="showRsi"> RSI</label>
+          </div>
+          <canvas id="priceChart" width="1200" height="430"></canvas>
+        </section>
+
+        <details class="drawer">
+          <summary>Key numbers</summary>
           <div class="vital-grid" aria-label="Vital signs">
             <article>
               <p class="label">P/E <span class="term" data-tip="Price compared with earnings.">?</span></p>
@@ -139,101 +114,137 @@
               <strong id="vitalGrowth">N/A</strong>
             </article>
           </div>
+        </details>
 
-          <details>
-            <summary>More analysis</summary>
-            <div class="details-grid">
-              <article>
-                <h2>Fundamentals</h2>
-                <dl class="metric-grid" id="fundamentals"></dl>
-              </article>
-              <article>
-                <h2>Technicals</h2>
-                <dl class="metric-grid" id="technicals"></dl>
-              </article>
-              <article>
-                <h2>Performance</h2>
-                <dl class="metric-grid" id="performance"></dl>
-              </article>
-              <article>
-                <h2>Watch</h2>
-                <ul id="watchItems"></ul>
-                <h2>Factors</h2>
-                <div class="factor-columns">
-                  <ul id="fundFactors"></ul>
-                  <ul id="techFactors"></ul>
+        <details class="drawer">
+          <summary>Full analysis</summary>
+          <div class="details-grid">
+            <article class="score-card">
+              <h2>Score</h2>
+              <div class="score-grid">
+                <div><span>Total</span><strong id="scoreRing">0</strong></div>
+                <div><span>Fundamental</span><strong id="fundScore">0</strong></div>
+                <div><span>Technical</span><strong id="techScore">0</strong></div>
+              </div>
+              <p class="caveat" id="caveat"></p>
+            </article>
+
+            <article>
+              <h2>Risk</h2>
+              <div class="risk-box">
+                <div class="risk-meter">
+                  <span>Volatility</span>
+                  <strong id="volatilityRisk">Unknown</strong>
+                  <div class="meter-track"><i id="volatilityMeter"></i></div>
+                  <small id="volatilityLabel">Not enough data</small>
                 </div>
-              </article>
+                <div class="risk-meter">
+                  <span>Debt</span>
+                  <strong id="debtRisk">Unknown</strong>
+                  <div class="meter-track"><i id="debtMeter"></i></div>
+                  <small id="debtLabel">Not available</small>
+                </div>
+              </div>
+            </article>
+
+            <article>
+              <h2>Watch</h2>
+              <ul id="watchItems"></ul>
+            </article>
+
+            <article>
+              <h2>Fundamentals</h2>
+              <dl class="metric-grid" id="fundamentals"></dl>
+            </article>
+
+            <article>
+              <h2>Technicals</h2>
+              <dl class="metric-grid" id="technicals"></dl>
+            </article>
+
+            <article>
+              <h2>Performance</h2>
+              <dl class="metric-grid" id="performance"></dl>
+            </article>
+
+            <article>
+              <h2>Factors</h2>
+              <div class="factor-columns">
+                <ul id="fundFactors"></ul>
+                <ul id="techFactors"></ul>
+              </div>
+            </article>
+          </div>
+        </details>
+      </section>
+
+      <details class="drawer screener-drawer">
+        <summary>Screener</summary>
+        <section class="screener-panel">
+          <div class="panel-head">
+            <h2>Screen symbols</h2>
+            <button class="primary-button compact-button" id="runScreener" type="button">Run</button>
+          </div>
+
+          <div class="screener-controls">
+            <div class="field">
+              <label for="screenerPreset">Preset</label>
+              <select id="screenerPreset">
+                <option value="default" selected>Default</option>
+                <option value="stable-dividend">Dividend</option>
+                <option value="momentum">Momentum</option>
+                <option value="oversold-watch">Oversold</option>
+                <option value="low-volatility">Low vol</option>
+                <option value="forex-majors">Forex</option>
+                <option value="pse">PSE</option>
+              </select>
             </div>
-          </details>
+            <div class="field">
+              <label for="screenerSymbols">Symbols</label>
+              <textarea id="screenerSymbols" rows="1" placeholder="Optional: AAPL, MSFT, SPY"></textarea>
+            </div>
+            <div class="field">
+              <label for="screenerRating">Rating</label>
+              <select id="screenerRating">
+                <option value="All" selected>All</option>
+                <option value="Bullish">Bullish</option>
+                <option value="Neutral">Neutral</option>
+                <option value="Bearish">Bearish</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="screenerMinScore">Min</label>
+              <input id="screenerMinScore" type="number" step="0.25" value="-99">
+            </div>
+          </div>
+
+          <div class="screener-meta" id="screenerMeta">Choose a preset or enter symbols.</div>
+          <div class="table-wrap">
+            <table class="screener-table">
+              <thead>
+                <tr>
+                  <th><button class="sort-button" type="button" data-sort="symbol">Symbol</button></th>
+                  <th><button class="sort-button" type="button" data-sort="rating">Rating</button></th>
+                  <th><button class="sort-button" type="button" data-sort="totalScore">Score</button></th>
+                  <th><button class="sort-button" type="button" data-sort="price">Price</button></th>
+                  <th><button class="sort-button" type="button" data-sort="oneMonth">1M</button></th>
+                  <th><button class="sort-button" type="button" data-sort="threeMonth">3M</button></th>
+                  <th><button class="sort-button" type="button" data-sort="rsi14">RSI</button></th>
+                  <th><button class="sort-button" type="button" data-sort="volatility">Risk</button></th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="screenerRows">
+                <tr>
+                  <td colspan="9">Run the screener.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
-      </section>
-
-      <section class="screener-panel">
-        <div class="panel-head">
-          <h2>Screener</h2>
-          <button class="primary-button compact-button" id="runScreener" type="button">Run</button>
-        </div>
-
-        <div class="screener-controls">
-          <div class="field">
-            <label for="screenerPreset">Preset</label>
-            <select id="screenerPreset">
-              <option value="default" selected>Default</option>
-              <option value="stable-dividend">Dividend</option>
-              <option value="momentum">Momentum</option>
-              <option value="oversold-watch">Oversold</option>
-              <option value="low-volatility">Low vol</option>
-              <option value="forex-majors">Forex</option>
-              <option value="pse">PSE</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="screenerSymbols">Symbols</label>
-            <textarea id="screenerSymbols" rows="1" placeholder="Optional: AAPL, MSFT, SPY"></textarea>
-          </div>
-          <div class="field">
-            <label for="screenerRating">Rating</label>
-            <select id="screenerRating">
-              <option value="All" selected>All</option>
-              <option value="Bullish">Bullish</option>
-              <option value="Neutral">Neutral</option>
-              <option value="Bearish">Bearish</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="screenerMinScore">Min</label>
-            <input id="screenerMinScore" type="number" step="0.25" value="-99">
-          </div>
-        </div>
-
-        <div class="screener-meta" id="screenerMeta">Choose a preset or enter symbols.</div>
-        <div class="table-wrap">
-          <table class="screener-table">
-            <thead>
-              <tr>
-                <th><button class="sort-button" type="button" data-sort="symbol">Symbol</button></th>
-                <th><button class="sort-button" type="button" data-sort="rating">Rating</button></th>
-                <th><button class="sort-button" type="button" data-sort="totalScore">Score</button></th>
-                <th><button class="sort-button" type="button" data-sort="price">Price</button></th>
-                <th><button class="sort-button" type="button" data-sort="oneMonth">1M</button></th>
-                <th><button class="sort-button" type="button" data-sort="threeMonth">3M</button></th>
-                <th><button class="sort-button" type="button" data-sort="rsi14">RSI</button></th>
-                <th><button class="sort-button" type="button" data-sort="volatility">Risk</button></th>
-                <th>Reason</th>
-              </tr>
-            </thead>
-            <tbody id="screenerRows">
-              <tr>
-                <td colspan="9">Run the screener.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      </details>
 
       <section class="hidden-support" aria-hidden="true">
-        <span id="summarySource">Rules</span>
         <button id="addWatchlist" type="button"></button>
         <button id="clearWatchlist" type="button"></button>
         <div id="watchlist"></div>
