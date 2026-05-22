@@ -27,14 +27,38 @@ The app uses free market data, so availability, delay, and field coverage vary b
 
 ## Optional AI Summaries
 
-The app works without AI and falls back to a rules-based beginner summary. To enable OpenAI-powered summaries, set:
+The app works without AI and falls back to a rules-based beginner summary.
+
+### Free local Ollama summaries
+
+Install Ollama, pull a model, and start Ollama locally:
+
+```powershell
+ollama pull llama3.1
+ollama serve
+```
+
+Then run this app with:
+
+```powershell
+$env:OLLAMA_ENABLED="true"
+$env:OLLAMA_BASE_URL="http://localhost:11434"
+$env:OLLAMA_MODEL="llama3.1"
+npm start
+```
+
+Render cannot reach your laptop's `localhost`. To use Ollama on Render, set `OLLAMA_BASE_URL` to a reachable hosted Ollama server URL.
+
+### OpenAI summaries
+
+To enable OpenAI-powered summaries instead, set:
 
 ```powershell
 $env:OPENAI_API_KEY="your_key_here"
 $env:OPENAI_MODEL="gpt-5.5"
 ```
 
-On Render, add the same values in the service environment variables. The app uses the OpenAI Responses API and never sends API keys to the browser.
+On Render, add the same values in the service environment variables. The app never sends AI provider keys to the browser.
 
 ## Deploy on Render
 

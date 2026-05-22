@@ -23,6 +23,8 @@ const RANGE_DAYS = {
 
 const VALID_INTERVALS = new Set(["1d", "1wk", "1mo"]);
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1";
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const DEFAULT_SCREENER_SYMBOLS = [
   "AAPL",
   "MSFT",
@@ -612,17 +614,108 @@ function buildRiskProfile(fundamentals, technicals) {
 
 async function buildBottomLine(context) {
   const fallback = buildBottomLineFallback(context);
-  if (!process.env.OPENAI_API_KEY) return fallback;
+
+  if (process.env.OLLAMA_ENABLED === "true" || process.env.OLLAMA_BASE_URL) {
+    const ollamaText = await generateOllamaBottomLine(context).catch(() => "");
+    if (ollamaText) {
+      return {
+        ...fallback,
+        source: "Ollama",
+        summary: ollamaText
+      };
+    }
+  }
+
+  if (process.env.OPENAI_API_KEY) {
+    const openAiText = await generateOpenAiBottomLine(context).catch(() => "");
+    if (openAiText) {
+      return {
+        ...fallback,
+        source: "OpenAI",
+        summary: openAiText
+      };
+    }
+  }
+
+  return fallback;
+}
+
+function buildAiPrompt({ symbol, quote, fundamentals, technicals, performance, analysis, risk }) {
+  return [
+    "Write a beginner-friendly market summary using only the JSON data below.",
+    "Be clear, calm, and educational.",
+    "Do not give buy, sell, hold, price target, or personalized financial advice.",
+    "Mention uncertainty and missing data when relevant.",
+    "Keep it to one short paragraph plus one sentence about what to watch.",
+    "",
+    JSON.stringify({
+      symbol,
+      quote,
+      fundamentals,
+      technicals,
+      performance,
+      rating: analysis.rating,
+      risk
+    })
+  ].join("\n");
+}
+
+async function generateOllamaBottomLine(context) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const aiText = await generateAiBottomLine(context);
-    return {
-      ...fallback,
-      source: "OpenAI",
-      summary: aiText || fallback.summary
-    };
-  } catch {
-    return fallback;
+    const response = await fetch(`${OLLAMA_BASE_URL.replace(/\/$/, "")}/api/generate`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        prompt: buildAiPrompt(context),
+        stream: false,
+        options: {
+          temperature: 0.2,
+          num_predict: 220
+        }
+      })
+    });
+
+    if (!response.ok) throw new Error(`Ollama request failed with HTTP ${response.status}`);
+    const data = await response.json();
+    return String(data.response || "").trim();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function generateOpenAiBottomLine(context) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        store: false,
+        instructions: "Write a beginner-friendly market summary. Be clear, calm, and educational. Do not give buy, sell, hold, price target, or personalized financial advice. Mention uncertainty and missing data when relevant.",
+        input: buildAiPrompt(context),
+        text: { verbosity: "low" }
+      })
+    });
+
+    if (!response.ok) throw new Error(`OpenAI request failed with HTTP ${response.status}`);
+    const data = await response.json();
+    return extractResponseText(data);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -668,43 +761,6 @@ function buildConfidence(fundamentals, technicals) {
   if (isFiniteNumber(technicals.sma200)) points += 1;
   if (isFiniteNumber(technicals.rsi14)) points += 1;
   return points >= 3 ? "High" : points >= 2 ? "Medium" : "Low";
-}
-
-async function generateAiBottomLine({ symbol, quote, fundamentals, technicals, performance, analysis, risk }) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        store: false,
-        instructions: "Write a beginner-friendly market summary. Be clear, calm, and educational. Do not give buy, sell, hold, price target, or personalized financial advice. Mention uncertainty and missing data when relevant.",
-        input: JSON.stringify({
-          symbol,
-          quote,
-          fundamentals,
-          technicals,
-          performance,
-          rating: analysis.rating,
-          risk
-        }),
-        text: { verbosity: "low" }
-      })
-    });
-
-    if (!response.ok) throw new Error(`OpenAI request failed with HTTP ${response.status}`);
-    const data = await response.json();
-    return extractResponseText(data);
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 function extractResponseText(data) {

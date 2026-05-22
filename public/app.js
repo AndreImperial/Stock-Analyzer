@@ -312,7 +312,9 @@ function renderBottomLine(data) {
 
   document.querySelector("#bottomLineHeadline").textContent = bottomLine.headline || `${data.symbol} summary`;
   document.querySelector("#bottomLineText").textContent = bottomLine.summary || data.analysis.caveat;
-  document.querySelector("#summarySource").textContent = bottomLine.source === "OpenAI" ? "AI summary" : "Rules summary";
+  document.querySelector("#summarySource").textContent = bottomLine.source === "OpenAI" || bottomLine.source === "Ollama"
+    ? `${bottomLine.source} summary`
+    : "Rules summary";
   document.querySelector("#watchItems").innerHTML = (bottomLine.watch || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 
   renderRiskMeter("volatility", risk.volatility);
