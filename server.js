@@ -113,7 +113,7 @@ app.get("/api/analyze", async (req, res) => {
     res.json({
       symbol,
       asOf: new Date().toISOString(),
-      quote: buildQuote(quote, history),
+      quote: buildQuote(quote, history, symbol),
       fundamentals,
       technicals,
       performance,
@@ -141,11 +141,11 @@ function unwrapSettled(result) {
   return result.status === "fulfilled" ? result.value : null;
 }
 
-function buildQuote(quote, history) {
+function buildQuote(quote, history, symbol) {
   const last = history[history.length - 1] || {};
   return {
-    symbol: quote?.symbol || "",
-    name: quote?.longName || quote?.shortName || quote?.displayName || "",
+    symbol: quote?.symbol || symbol || "",
+    name: quote?.longName || quote?.shortName || quote?.displayName || quote?.name || "",
     type: quote?.quoteType || "",
     exchange: quote?.fullExchangeName || quote?.exchange || "",
     currency: quote?.currency || "",
@@ -487,10 +487,24 @@ async function yahooSearch(q) {
 }
 
 async function yahooQuote(symbol) {
-  const data = await yahooGet("https://query1.finance.yahoo.com/v7/finance/quote", {
-    symbols: symbol
-  });
-  return data.quoteResponse?.result?.[0] || null;
+  try {
+    const data = await yahooGet("https://query2.finance.yahoo.com/v7/finance/quote", {
+      symbols: symbol
+    });
+    return data.quoteResponse?.result?.[0] || null;
+  } catch {
+    const search = await yahooSearch(symbol);
+    const exact = (search.quotes || []).find((item) => item.symbol?.toUpperCase() === symbol.toUpperCase());
+    if (!exact) return null;
+    return {
+      symbol: exact.symbol,
+      shortName: exact.shortname || exact.longname || exact.name || "",
+      longName: exact.longname || exact.shortname || exact.name || "",
+      quoteType: exact.quoteType || exact.typeDisp || "",
+      fullExchangeName: exact.exchDisp || exact.exchange || "",
+      exchange: exact.exchange || ""
+    };
+  }
 }
 
 async function yahooQuoteSummary(symbol, modules) {
