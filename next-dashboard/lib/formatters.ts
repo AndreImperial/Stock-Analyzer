@@ -5,12 +5,19 @@
 export function formatMarketValue(value: number | null, currency = "USD") {
   if (!Number.isFinite(value)) return "Not available";
 
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    notation: "compact",
-    maximumFractionDigits: 2
-  }).format(value as number);
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      notation: "compact",
+      maximumFractionDigits: 2
+    }).format(value as number);
+  } catch {
+    return new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: 2
+    }).format(value as number);
+  }
 }
 
 /**

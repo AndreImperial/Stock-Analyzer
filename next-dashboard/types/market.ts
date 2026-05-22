@@ -29,3 +29,7 @@ export type VitalSignsData = {
    */
   currency?: string;
 };
+
+export type VitalSignStatus = "good" | "watch" | "risk" | "neutral" | "unavailable";
+
+export type AssetMarket = "US" | "PSE" | "Forex";

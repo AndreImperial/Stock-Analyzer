@@ -17,6 +17,7 @@ next-dashboard/
   app/
     layout.tsx
     page.tsx
+    globals.css
     screener/
       page.tsx
     symbol/
@@ -49,3 +50,14 @@ next-dashboard/
 ```
 
 This keeps UI components separate from market-data adapters, which matters because PSE, US equities, and forex will not all expose the same fundamentals.
+
+Generate the actual Next project shell with `create-next-app`, then copy this folder structure into it. Use TailwindCSS and TypeScript when creating the app.
+
+## First Component
+
+`components/VitalSignsCard.tsx` is intentionally conservative for beginner investors:
+
+- It accepts missing values because forex and some PSE symbols may not expose every metric.
+- It uses a real `JargonTooltip` component, not just a browser `title` attribute.
+- It labels each metric as Healthy, Watch, Risk, Neutral, or Missing.
+- It avoids buy/sell language and explains what each signal means in plain English.
