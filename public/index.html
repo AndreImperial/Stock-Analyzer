@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Global Market Analyzer</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">Global Market Analyzer</p>
+          <h1>Fundamental and technical analysis for world markets</h1>
+        </div>
+        <div class="status-pill" id="marketStatus">Local MVP</div>
+      </section>
+
+      <section class="search-panel">
+        <form id="analyzeForm" class="search-form">
+          <div class="field symbol-field">
+            <label for="symbolInput">Symbol</label>
+            <input id="symbolInput" name="symbol" type="text" value="AAPL" autocomplete="off" placeholder="AAPL, BTC-USD, EURUSD=X, ^GSPC">
+            <div class="search-results" id="searchResults" hidden></div>
+          </div>
+          <div class="field">
+            <label for="rangeSelect">Range</label>
+            <select id="rangeSelect" name="range">
+              <option value="3mo">3M</option>
+              <option value="6mo">6M</option>
+              <option value="1y" selected>1Y</option>
+              <option value="2y">2Y</option>
+              <option value="5y">5Y</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="intervalSelect">Interval</label>
+            <select id="intervalSelect" name="interval">
+              <option value="1d" selected>Daily</option>
+              <option value="1wk">Weekly</option>
+              <option value="1mo">Monthly</option>
+            </select>
+          </div>
+          <button class="primary-button" type="submit">Analyze</button>
+        </form>
+
+        <div class="examples" aria-label="Example symbols">
+          <button data-symbol="AAPL">AAPL</button>
+          <button data-symbol="SPY">SPY</button>
+          <button data-symbol="BTC-USD">BTC-USD</button>
+          <button data-symbol="EURUSD=X">EURUSD=X</button>
+          <button data-symbol="^GSPC">^GSPC</button>
+        </div>
+      </section>
+
+      <section class="notice" id="notice" hidden></section>
+
+      <section class="dashboard" id="dashboard" hidden>
+        <div class="summary-grid">
+          <article class="score-card">
+            <div class="score-head">
+              <div>
+                <p class="label">Educational rating</p>
+                <h2 id="rating">Neutral</h2>
+              </div>
+              <div class="score-ring" id="scoreRing">0</div>
+            </div>
+            <p class="caveat" id="caveat"></p>
+            <div class="score-bars">
+              <div>
+                <span>Fundamental</span>
+                <strong id="fundScore">0</strong>
+              </div>
+              <div>
+                <span>Technical</span>
+                <strong id="techScore">0</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="quote-card">
+            <p class="label" id="assetType">Quote</p>
+            <h2 id="assetName">AAPL</h2>
+            <div class="price-row">
+              <strong id="price">--</strong>
+              <span id="change">--</span>
+            </div>
+            <dl class="mini-stats" id="quoteStats"></dl>
+          </article>
+        </div>
+
+        <section class="chart-section">
+          <div class="section-head">
+            <div>
+              <p class="label">Price history</p>
+              <h2 id="chartTitle">Chart</h2>
+            </div>
+            <span id="asOf"></span>
+          </div>
+          <canvas id="priceChart" width="1200" height="430"></canvas>
+        </section>
+
+        <section class="content-grid">
+          <article>
+            <div class="section-head">
+              <h2>Fundamentals</h2>
+            </div>
+            <dl class="metric-grid" id="fundamentals"></dl>
+          </article>
+
+          <article>
+            <div class="section-head">
+              <h2>Technicals</h2>
+            </div>
+            <dl class="metric-grid" id="technicals"></dl>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <article>
+            <div class="section-head">
+              <h2>Performance</h2>
+            </div>
+            <dl class="metric-grid" id="performance"></dl>
+          </article>
+
+          <article>
+            <div class="section-head">
+              <h2>Factors</h2>
+            </div>
+            <div class="factor-columns">
+              <div>
+                <h3>Fundamental</h3>
+                <ul id="fundFactors"></ul>
+              </div>
+              <div>
+                <h3>Technical</h3>
+                <ul id="techFactors"></ul>
+              </div>
+            </div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
