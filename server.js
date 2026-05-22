@@ -1,6 +1,5 @@
 const express = require("express");
 const path = require("path");
-const yahooFinance = require("yahoo-finance2").default;
 const {
   SMA,
   EMA,
@@ -12,6 +11,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const yahooFinancePromise = import("yahoo-finance2").then((module) => module.default || module);
 
 const RANGE_DAYS = {
   "1mo": 32,
@@ -33,6 +33,7 @@ app.get("/api/search", async (req, res) => {
   }
 
   try {
+    const yahooFinance = await getYahooFinance();
     const result = await yahooFinance.search(q, {
       quotesCount: 10,
       newsCount: 0
@@ -76,6 +77,7 @@ app.get("/api/analyze", async (req, res) => {
   const period1 = new Date(period2.getTime() - RANGE_DAYS[range] * 24 * 60 * 60 * 1000);
 
   try {
+    const yahooFinance = await getYahooFinance();
     const [quoteResult, summaryResult, historyResult] = await Promise.allSettled([
       yahooFinance.quote(symbol),
       yahooFinance.quoteSummary(symbol, {
@@ -145,6 +147,10 @@ app.listen(PORT, () => {
 
 function unwrapSettled(result) {
   return result.status === "fulfilled" ? result.value : null;
+}
+
+function getYahooFinance() {
+  return yahooFinancePromise;
 }
 
 function buildQuote(quote, history) {
