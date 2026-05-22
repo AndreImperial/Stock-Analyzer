@@ -65,6 +65,19 @@
 
       <section class="notice" id="notice" hidden></section>
 
+      <section class="home-state" id="homeState">
+        <div>
+          <p class="label">Start here</p>
+          <h1>Research without the overload.</h1>
+          <p>Analyze one symbol, compare up to three, or screen a preset universe. Everything runs on free data.</p>
+        </div>
+        <div class="starter-grid">
+          <button type="button" data-focus-action="analyze">Analyze</button>
+          <button type="button" data-focus-action="compare">Compare</button>
+          <button type="button" data-focus-action="screen">Screen</button>
+        </div>
+      </section>
+
       <section class="dashboard" id="dashboard" hidden>
         <section class="hero-result">
           <div class="identity">
@@ -87,8 +100,29 @@
             <h2 id="bottomLineHeadline">Summary</h2>
             <span class="status-pill" id="summarySource">Rules</span>
           </div>
+          <div class="quality-row" id="dataQuality"></div>
           <p class="bottom-line-text" id="bottomLineText"></p>
           <p class="missing-notes" id="missingNotes"></p>
+          <div class="confidence-meter">
+            <span>Confidence</span>
+            <strong id="confidenceValue">Unknown</strong>
+            <div class="meter-track"><i id="confidenceMeter"></i></div>
+          </div>
+        </section>
+
+        <section class="insight-grid">
+          <article>
+            <span>Strong</span>
+            <ul id="insightStrong"></ul>
+          </article>
+          <article>
+            <span>Weak</span>
+            <ul id="insightWeak"></ul>
+          </article>
+          <article>
+            <span>Changed</span>
+            <ul id="insightChanged"></ul>
+          </article>
         </section>
 
         <section class="chart-panel">
@@ -100,6 +134,7 @@
             <label><input type="checkbox" id="showSma50" checked> 50 SMA</label>
             <label><input type="checkbox" id="showSma200"> 200 SMA</label>
             <label><input type="checkbox" id="showRsi"> RSI</label>
+            <label><input type="checkbox" id="showPercent"> % view</label>
           </div>
           <canvas id="priceChart" width="1200" height="430"></canvas>
         </section>
@@ -137,6 +172,7 @@
                 <div><span>Technical</span><strong id="techScore">0</strong></div>
               </div>
               <p class="caveat" id="caveat"></p>
+              <ul class="score-explain" id="scoreExplanation"></ul>
             </article>
 
             <article>
@@ -160,6 +196,16 @@
             <article>
               <h2>Watch</h2>
               <ul id="watchItems"></ul>
+            </article>
+
+            <article>
+              <h2>Technical timeline</h2>
+              <div class="timeline" id="signalTimeline"></div>
+            </article>
+
+            <article>
+              <h2>Fundamental health</h2>
+              <div class="health-grid" id="healthPanel"></div>
             </article>
 
             <article>
@@ -188,12 +234,62 @@
         </details>
       </section>
 
+      <details class="drawer compare-drawer" id="compareDrawer">
+        <summary>Compare</summary>
+        <section class="tool-panel">
+          <div class="tool-form">
+            <div class="field">
+              <label for="compareSymbols">Symbols</label>
+              <input id="compareSymbols" type="text" value="AAPL, MSFT, SPY" placeholder="AAPL, MSFT, SPY">
+            </div>
+            <button class="primary-button compact-button" id="runCompare" type="button">Compare</button>
+          </div>
+          <div class="compare-grid" id="compareRows"></div>
+        </section>
+      </details>
+
+      <details class="drawer watchlist-drawer">
+        <summary>Watchlist</summary>
+        <section class="tool-panel">
+          <div class="panel-head">
+            <h2>Saved symbols</h2>
+            <button class="secondary-button" id="clearWatchlist" type="button">Clear</button>
+          </div>
+          <button class="secondary-button" id="addWatchlist" type="button">Save current symbol</button>
+          <div class="watchlist" id="watchlist"></div>
+        </section>
+      </details>
+
+      <details class="drawer portfolio-drawer">
+        <summary>Portfolio sandbox</summary>
+        <section class="tool-panel">
+          <div class="tool-form portfolio-form">
+            <div class="field"><label for="portfolioSymbol">Symbol</label><input id="portfolioSymbol" type="text" placeholder="AAPL"></div>
+            <div class="field"><label for="portfolioShares">Shares</label><input id="portfolioShares" type="number" min="0" step="0.01" placeholder="10"></div>
+            <div class="field"><label for="portfolioCost">Cost/share</label><input id="portfolioCost" type="number" min="0" step="0.01" placeholder="150"></div>
+            <button class="primary-button compact-button" id="addHolding" type="button">Add</button>
+          </div>
+          <div class="portfolio-summary" id="portfolioSummary"></div>
+          <div class="table-wrap small-table">
+            <table class="screener-table">
+              <thead><tr><th>Symbol</th><th>Shares</th><th>Cost</th><th>Value</th><th>P/L</th><th></th></tr></thead>
+              <tbody id="portfolioRows"><tr><td colspan="6">Add fake holdings to model allocation.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </details>
+
       <details class="drawer screener-drawer">
         <summary>Screener</summary>
         <section class="screener-panel">
+          <div class="preset-cards" id="presetCards"></div>
           <div class="panel-head">
             <h2>Screen symbols</h2>
             <button class="primary-button compact-button" id="runScreener" type="button">Run</button>
+          </div>
+          <div class="tool-form preset-builder">
+            <div class="field"><label for="presetName">Preset name</label><input id="presetName" type="text" placeholder="My watchlist preset"></div>
+            <button class="secondary-button" id="savePreset" type="button">Save preset</button>
           </div>
 
           <div class="screener-controls">
@@ -254,14 +350,34 @@
         </section>
       </details>
 
+      <details class="drawer news-drawer">
+        <summary>News</summary>
+        <section class="tool-panel">
+          <div class="panel-head">
+            <h2 id="newsTitle">Symbol news</h2>
+            <button class="secondary-button" id="refreshNews" type="button">Refresh</button>
+          </div>
+          <div class="news-sentiment" id="newsSentiment">Run analysis to load headlines.</div>
+          <div class="news-list" id="newsList"></div>
+        </section>
+      </details>
+
+      <details class="drawer settings-drawer">
+        <summary>Settings</summary>
+        <section class="tool-panel settings-grid">
+          <div class="field"><label for="defaultSymbol">Default symbol</label><input id="defaultSymbol" type="text" placeholder="AAPL"></div>
+          <div class="field"><label for="defaultRange">Default range</label><select id="defaultRange"><option value="3mo">3M</option><option value="6mo">6M</option><option value="1y">1Y</option><option value="2y">2Y</option><option value="5y">5Y</option></select></div>
+          <div class="field"><label for="densityMode">Density</label><select id="densityMode"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div>
+          <button class="primary-button compact-button" id="saveSettings" type="button">Save</button>
+        </section>
+      </details>
+
+      <footer class="trust-footer">
+        Free public data can be delayed, incomplete, rate limited, or unavailable. This app is educational only and never financial advice.
+      </footer>
+
       <section class="hidden-support" aria-hidden="true">
-        <button id="addWatchlist" type="button"></button>
-        <button id="clearWatchlist" type="button"></button>
-        <div id="watchlist"></div>
         <dl id="quoteStats"></dl>
-        <h2 id="newsTitle"></h2>
-        <button id="refreshNews" type="button"></button>
-        <div id="newsList"></div>
       </section>
     </main>
 

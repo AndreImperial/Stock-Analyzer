@@ -213,6 +213,83 @@ app.get("/api/analyze", async (req, res) => {
   }
 });
 
+app.get("/api/compare", async (req, res) => {
+  const range = String(req.query.range || "1y");
+  const interval = String(req.query.interval || "1d");
+  const symbols = String(req.query.symbols || "")
+    .split(/[\s,;]+/)
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  if (symbols.length < 2) {
+    return res.status(400).json({ error: "Enter two or three symbols to compare." });
+  }
+
+  if (!RANGE_DAYS[range]) {
+    return res.status(400).json({ error: "Unsupported range." });
+  }
+
+  if (!VALID_INTERVALS.has(interval)) {
+    return res.status(400).json({ error: "Unsupported interval." });
+  }
+
+  try {
+    const settled = await mapWithConcurrency(symbols, 3, async (symbol) => {
+      try {
+        return await analyzeSymbol(symbol, range, interval, false);
+      } catch (error) {
+        return { symbol, error: cleanError(error) };
+      }
+    });
+
+    res.json({
+      asOf: new Date().toISOString(),
+      range,
+      interval,
+      rows: settled.filter((item) => !item.error).map(buildCompareRow),
+      failures: settled.filter((item) => item.error)
+    });
+  } catch (error) {
+    res.status(502).json({
+      error: "Compare failed. Try fewer symbols or a shorter range.",
+      details: cleanError(error)
+    });
+  }
+});
+
+app.get("/api/news-summary", async (req, res) => {
+  const symbol = String(req.query.symbol || "").trim().toUpperCase();
+  if (!symbol) {
+    return res.status(400).json({ error: "Enter a symbol for news summary." });
+  }
+
+  try {
+    const result = await yahooSearch(symbol, { quotesCount: 0, newsCount: 10 });
+    const news = (result.news || []).map((item) => ({
+      title: item.title || "",
+      publisher: item.publisher || "",
+      link: item.link || "",
+      publishedAt: item.providerPublishTime
+        ? new Date(item.providerPublishTime * 1000).toISOString()
+        : null
+    })).filter((item) => item.title && item.link);
+    const summary = await buildNewsSummary(symbol, news);
+
+    res.json({
+      symbol,
+      asOf: new Date().toISOString(),
+      ...summary,
+      news
+    });
+  } catch (error) {
+    res.status(502).json({
+      error: "News summary is unavailable from the free source right now.",
+      details: cleanError(error)
+    });
+  }
+});
+
 app.get("/api/screener", async (req, res) => {
   const range = String(req.query.range || "6mo");
   const interval = String(req.query.interval || "1d");
@@ -388,9 +465,11 @@ async function analyzeSymbol(symbol, range, interval, includeHistory) {
   const analysis = buildAnalysis(fundamentals, technicals, performance, quote);
   const finalQuote = buildQuote(quote, history, symbol);
   const risk = buildRiskProfile(fundamentals, technicals);
+  const warnings = buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, history, fundamentals, quote, symbol);
   const bottomLine = includeHistory
     ? await buildBottomLine({ symbol, quote: finalQuote, fundamentals, technicals, performance, analysis, risk })
     : buildBottomLineFallback({ symbol, quote: finalQuote, fundamentals, technicals, performance, analysis, risk });
+  const confidence = buildConfidence(fundamentals, technicals);
 
   return {
     symbol,
@@ -402,8 +481,14 @@ async function analyzeSymbol(symbol, range, interval, includeHistory) {
     analysis,
     risk,
     bottomLine,
+    insights: buildInsights(fundamentals, technicals, performance, analysis, risk),
+    confidence,
+    dataQuality: buildDataQuality(symbol, fundamentals, technicals, history, warnings),
+    technicalTimeline: buildTechnicalTimeline(technicals, performance),
+    fundamentalHealth: buildFundamentalHealth(fundamentals),
+    scoreExplanation: buildScoreExplanation(analysis),
     history: includeHistory ? history : [],
-    warnings: buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, history, fundamentals, quote)
+    warnings
   };
 }
 
@@ -815,7 +900,158 @@ function buildConfidence(fundamentals, technicals) {
   return points >= 3 ? "High" : points >= 2 ? "Medium" : "Low";
 }
 
-function buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, history, fundamentals, quote) {
+function buildCompareRow(item) {
+  return {
+    symbol: item.symbol,
+    name: item.quote.name,
+    type: item.quote.type,
+    price: item.quote.price,
+    rating: item.analysis.rating,
+    totalScore: item.analysis.totalScore,
+    confidence: item.confidence,
+    oneMonth: item.performance.oneMonth,
+    threeMonth: item.performance.threeMonth,
+    ytd: item.performance.ytd,
+    pe: firstNumber(item.fundamentals.trailingPE, item.fundamentals.forwardPE),
+    dividendYield: item.fundamentals.dividendYield,
+    rsi14: item.technicals.rsi14,
+    volatility: item.risk.volatility,
+    summary: item.bottomLine.summary,
+    dataQuality: item.dataQuality
+  };
+}
+
+function buildInsights(fundamentals, technicals, performance, analysis, risk) {
+  const strong = [];
+  const weak = [];
+  const changed = [];
+
+  if (technicals.aboveSma50 === true) strong.push("Price is above the 50-period average.");
+  if (technicals.aboveSma200 === true) strong.push("Longer-term trend is still constructive.");
+  if (isFiniteNumber(fundamentals.profitMargin) && fundamentals.profitMargin > 0.15) strong.push("Profit margin looks healthy.");
+  if (isFiniteNumber(fundamentals.dividendYield) && fundamentals.dividendYield > 0) strong.push("Dividend yield is available.");
+
+  if (technicals.aboveSma50 === false) weak.push("Price is below the 50-period average.");
+  if (technicals.aboveSma200 === false) weak.push("Price is below the 200-period average.");
+  if (risk.volatility.level === "High") weak.push("Volatility risk is elevated.");
+  if (risk.debt.level === "High") weak.push("Debt level is elevated.");
+  if (!hasFundamentalData(fundamentals)) weak.push("Fundamental data is limited.");
+
+  if (isFiniteNumber(performance.oneDay)) changed.push(`1-day move: ${formatNumber(performance.oneDay)}%.`);
+  if (isFiniteNumber(performance.oneMonth)) changed.push(`1-month move: ${formatNumber(performance.oneMonth)}%.`);
+  if (isFiniteNumber(technicals.rsi14)) changed.push(`RSI is ${formatNumber(technicals.rsi14)}.`);
+  changed.push(`Current educational rating is ${analysis.rating}.`);
+
+  return {
+    strong: strong.slice(0, 3),
+    weak: weak.slice(0, 3),
+    changed: changed.slice(0, 3)
+  };
+}
+
+function buildDataQuality(symbol, fundamentals, technicals, history, warnings) {
+  const badges = [];
+  badges.push({ label: "Free data", level: "info" });
+  if (/\.PS$/i.test(symbol)) badges.push({ label: "PSE fallback", level: "warn" });
+  if (!hasFundamentalData(fundamentals)) badges.push({ label: "Limited fundamentals", level: "warn" });
+  if (history.length < 200 || !isFiniteNumber(technicals.sma200)) badges.push({ label: "Limited long-term trend", level: "warn" });
+  if (!warnings.length) badges.push({ label: "Good coverage", level: "good" });
+  return badges;
+}
+
+function buildTechnicalTimeline(technicals, performance) {
+  const items = [];
+  if (technicals.aboveSma20 !== null) items.push({ label: "Short trend", value: technicals.aboveSma20 ? "Above SMA 20" : "Below SMA 20", tone: technicals.aboveSma20 ? "good" : "bad" });
+  if (technicals.aboveSma50 !== null) items.push({ label: "Medium trend", value: technicals.aboveSma50 ? "Above SMA 50" : "Below SMA 50", tone: technicals.aboveSma50 ? "good" : "bad" });
+  if (technicals.aboveSma200 !== null) items.push({ label: "Long trend", value: technicals.aboveSma200 ? "Above SMA 200" : "Below SMA 200", tone: technicals.aboveSma200 ? "good" : "bad" });
+  if (isFiniteNumber(technicals.rsi14)) {
+    const tone = technicals.rsi14 > 70 ? "warn" : technicals.rsi14 < 30 ? "good" : "neutral";
+    items.push({ label: "Momentum", value: `RSI ${formatNumber(technicals.rsi14)}`, tone });
+  }
+  if (isFiniteNumber(technicals.macd.histogram)) {
+    items.push({ label: "MACD", value: technicals.macd.histogram >= 0 ? "Positive momentum" : "Negative momentum", tone: technicals.macd.histogram >= 0 ? "good" : "bad" });
+  }
+  if (isFiniteNumber(performance.oneMonth)) {
+    items.push({ label: "Recent move", value: `${formatNumber(performance.oneMonth)}% over 1M`, tone: performance.oneMonth >= 0 ? "good" : "bad" });
+  }
+  return items.slice(0, 6);
+}
+
+function buildFundamentalHealth(fundamentals) {
+  const pe = firstNumber(fundamentals.trailingPE, fundamentals.forwardPE);
+  return [
+    healthMetric("Valuation", isFiniteNumber(pe) ? (pe < 18 ? "Healthy" : pe > 45 ? "Stretched" : "Fair") : "Unknown"),
+    healthMetric("Growth", isFiniteNumber(fundamentals.revenueGrowth) ? (fundamentals.revenueGrowth > 0.08 ? "Healthy" : fundamentals.revenueGrowth < -0.05 ? "Weak" : "Fair") : "Unknown"),
+    healthMetric("Profitability", isFiniteNumber(fundamentals.profitMargin) ? (fundamentals.profitMargin > 0.15 ? "Healthy" : fundamentals.profitMargin < 0 ? "Weak" : "Fair") : "Unknown"),
+    healthMetric("Dividends", isFiniteNumber(fundamentals.dividendYield) && fundamentals.dividendYield > 0 ? "Available" : "None/unknown"),
+    healthMetric("Debt", isFiniteNumber(fundamentals.debtToEquity) ? (fundamentals.debtToEquity < 80 ? "Healthy" : fundamentals.debtToEquity > 180 ? "High" : "Fair") : "Unknown")
+  ];
+}
+
+function healthMetric(label, status) {
+  const bad = ["Weak", "High", "Stretched"].includes(status);
+  const good = ["Healthy", "Available"].includes(status);
+  return { label, status, tone: good ? "good" : bad ? "bad" : "neutral" };
+}
+
+function buildScoreExplanation(analysis) {
+  return [
+    ...analysis.fundamentalFactors.slice(0, 2),
+    ...analysis.technicalFactors.slice(0, 3)
+  ];
+}
+
+async function buildNewsSummary(symbol, news) {
+  const fallback = buildRulesNewsSummary(symbol, news);
+  if ((process.env.OLLAMA_ENABLED === "true" || process.env.OLLAMA_BASE_URL) && news.length) {
+    const ollamaText = await generateOllamaNewsSummary(symbol, news).catch(() => "");
+    if (ollamaText) {
+      return { ...fallback, source: "Ollama", summary: ollamaText };
+    }
+  }
+  return fallback;
+}
+
+function buildRulesNewsSummary(symbol, news) {
+  const text = news.map((item) => item.title).join(" ").toLowerCase();
+  const positive = ["beats", "surge", "soar", "growth", "upgrade", "profit", "record", "rally"].filter((word) => text.includes(word)).length;
+  const negative = ["miss", "drop", "fall", "lawsuit", "risk", "downgrade", "loss", "weak"].filter((word) => text.includes(word)).length;
+  const sentiment = positive > negative ? "Positive" : negative > positive ? "Negative" : "Neutral";
+  const summary = news.length
+    ? `${symbol} has ${news.length} recent free-source headlines. The rules-based news tone is ${sentiment.toLowerCase()}; review the linked headlines before relying on this read.`
+    : `No recent headlines were found for ${symbol} from the free source.`;
+  return { source: "Rules", sentiment, summary };
+}
+
+async function generateOllamaNewsSummary(symbol, news) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL.replace(/\/$/, "")}/api/generate`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        stream: false,
+        prompt: [
+          "Summarize these market headlines for a beginner.",
+          "Do not give buy, sell, hold, price targets, or personalized advice.",
+          "One short paragraph only.",
+          JSON.stringify({ symbol, headlines: news.map((item) => item.title).slice(0, 10) })
+        ].join("\n"),
+        options: { temperature: 0.2, num_predict: 160 }
+      })
+    });
+    if (!response.ok) throw new Error(`Ollama request failed with HTTP ${response.status}`);
+    const data = await response.json();
+    return String(data.response || "").trim();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, history, fundamentals, quote, symbol = "") {
   const warnings = [];
 
   if (quoteResult.status === "rejected") {
@@ -833,6 +1069,9 @@ function buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, 
   }
   if (historyResult.status === "rejected" || history.length < 30) {
     warnings.push("Technical analysis is limited because price history is short or unavailable.");
+  }
+  if (/\.PS$/i.test(symbol)) {
+    warnings.push("PSE price history may use a free public fallback when Yahoo chart rows are empty.");
   }
 
   return warnings;

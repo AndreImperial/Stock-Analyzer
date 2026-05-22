@@ -3,6 +3,7 @@ const symbolInput = document.querySelector("#symbolInput");
 const rangeSelect = document.querySelector("#rangeSelect");
 const intervalSelect = document.querySelector("#intervalSelect");
 const dashboard = document.querySelector("#dashboard");
+const homeState = document.querySelector("#homeState");
 const notice = document.querySelector("#notice");
 const searchResults = document.querySelector("#searchResults");
 const analyzeButton = document.querySelector(".primary-button");
@@ -20,11 +21,38 @@ const aiStatus = document.querySelector("#aiStatus");
 const addWatchlistButton = document.querySelector("#addWatchlist");
 const clearWatchlistButton = document.querySelector("#clearWatchlist");
 const watchlist = document.querySelector("#watchlist");
+const dataQuality = document.querySelector("#dataQuality");
+const confidenceValue = document.querySelector("#confidenceValue");
+const confidenceMeter = document.querySelector("#confidenceMeter");
+const insightStrong = document.querySelector("#insightStrong");
+const insightWeak = document.querySelector("#insightWeak");
+const insightChanged = document.querySelector("#insightChanged");
+const scoreExplanation = document.querySelector("#scoreExplanation");
+const signalTimeline = document.querySelector("#signalTimeline");
+const healthPanel = document.querySelector("#healthPanel");
+const runCompareButton = document.querySelector("#runCompare");
+const compareSymbols = document.querySelector("#compareSymbols");
+const compareRows = document.querySelector("#compareRows");
+const portfolioSymbol = document.querySelector("#portfolioSymbol");
+const portfolioShares = document.querySelector("#portfolioShares");
+const portfolioCost = document.querySelector("#portfolioCost");
+const addHoldingButton = document.querySelector("#addHolding");
+const portfolioSummary = document.querySelector("#portfolioSummary");
+const portfolioRows = document.querySelector("#portfolioRows");
+const presetCards = document.querySelector("#presetCards");
+const presetName = document.querySelector("#presetName");
+const savePresetButton = document.querySelector("#savePreset");
+const newsSentiment = document.querySelector("#newsSentiment");
+const defaultSymbol = document.querySelector("#defaultSymbol");
+const defaultRange = document.querySelector("#defaultRange");
+const densityMode = document.querySelector("#densityMode");
+const saveSettingsButton = document.querySelector("#saveSettings");
 const chart = document.querySelector("#priceChart");
 const ctx = chart.getContext("2d");
 const showSma50 = document.querySelector("#showSma50");
 const showSma200 = document.querySelector("#showSma200");
 const showRsi = document.querySelector("#showRsi");
+const showPercent = document.querySelector("#showPercent");
 const JARGON = {
   "Trailing PE": "P/E ratio based on the last 12 months of earnings.",
   "Forward PE": "P/E ratio based on expected future earnings.",
@@ -44,6 +72,15 @@ let searchTimer = null;
 let lastAnalysis = null;
 let screenerData = [];
 let sortState = { key: "totalScore", direction: "desc" };
+const PRESET_LABELS = {
+  default: "Default",
+  "stable-dividend": "Dividend",
+  momentum: "Momentum",
+  "oversold-watch": "Oversold",
+  "low-volatility": "Low vol",
+  "forex-majors": "Forex",
+  pse: "PSE"
+};
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -67,8 +104,31 @@ clearWatchlistButton.addEventListener("click", () => {
   renderWatchlist();
 });
 
+runCompareButton.addEventListener("click", () => runCompare());
+
+addHoldingButton.addEventListener("click", () => addHolding());
+
+savePresetButton.addEventListener("click", () => saveCustomPreset());
+
+saveSettingsButton.addEventListener("click", () => saveSettings());
+
 screenerPreset.addEventListener("change", () => {
   if (!screenerSymbols.value.trim()) runScreener();
+});
+
+document.querySelectorAll("[data-focus-action]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.focusAction;
+    if (action === "analyze") symbolInput.focus();
+    if (action === "compare") {
+      document.querySelector("#compareDrawer").open = true;
+      compareSymbols.focus();
+    }
+    if (action === "screen") {
+      document.querySelector(".screener-drawer").open = true;
+      runScreener();
+    }
+  });
 });
 
 document.querySelectorAll("[data-sort]").forEach((button) => {
@@ -109,17 +169,29 @@ window.addEventListener("resize", () => {
   if (data.length) drawChart(data);
 });
 
-[showSma50, showSma200, showRsi].forEach((control) => {
+[showSma50, showSma200, showRsi, showPercent].forEach((control) => {
   control.addEventListener("change", () => {
     const data = chart.dataset.history ? JSON.parse(chart.dataset.history) : [];
     if (data.length) drawChart(data);
   });
 });
 
-analyze(symbolInput.value);
-runScreener();
+chart.addEventListener("mousemove", (event) => {
+  const data = chart.dataset.history ? JSON.parse(chart.dataset.history) : [];
+  if (!data.length) return;
+  drawChart(data, event);
+});
+
+chart.addEventListener("mouseleave", () => {
+  const data = chart.dataset.history ? JSON.parse(chart.dataset.history) : [];
+  if (data.length) drawChart(data);
+});
+
+loadSettings();
 loadAiStatus();
 renderWatchlist();
+renderPortfolio();
+renderPresetCards();
 
 async function searchSymbols(q) {
   try {
@@ -179,6 +251,7 @@ async function analyze(symbol) {
     if (!response.ok) throw new Error(payload.error || "Analysis failed");
     renderDashboard(payload);
     loadNews(payload.symbol);
+    loadNewsSummary(payload.symbol);
   } catch (error) {
     dashboard.hidden = true;
     showNotice(error.message || "Unable to analyze this symbol.");
@@ -222,6 +295,66 @@ function renderNews(items) {
       </span>
     </a>
   `).join("");
+}
+
+async function loadNewsSummary(symbol) {
+  newsSentiment.textContent = "Summarizing headlines...";
+  try {
+    const response = await fetch(`/api/news-summary?symbol=${encodeURIComponent(symbol)}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "News summary unavailable");
+    newsSentiment.innerHTML = `
+      <strong>${escapeHtml(payload.sentiment || "Neutral")} news tone</strong>
+      <span>${escapeHtml(payload.summary || "")}</span>
+    `;
+  } catch (error) {
+    newsSentiment.textContent = error.message || "News summary unavailable.";
+  }
+}
+
+async function runCompare() {
+  const symbols = compareSymbols.value.trim();
+  if (!symbols) return;
+  compareRows.innerHTML = `<p class="empty-state">Comparing...</p>`;
+  const params = new URLSearchParams({
+    symbols,
+    range: rangeSelect.value,
+    interval: intervalSelect.value
+  });
+  try {
+    const response = await fetch(`/api/compare?${params.toString()}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Compare failed");
+    renderCompare(payload.rows || [], payload.failures || []);
+  } catch (error) {
+    compareRows.innerHTML = `<p class="empty-state">${escapeHtml(error.message || "Compare unavailable.")}</p>`;
+  }
+}
+
+function renderCompare(rows, failures) {
+  if (!rows.length) {
+    compareRows.innerHTML = `<p class="empty-state">No comparison rows available.</p>`;
+    return;
+  }
+  compareRows.innerHTML = rows.map((row) => `
+    <article class="compare-card">
+      <button class="symbol-link" type="button" data-compare-symbol="${escapeHtml(row.symbol)}">${escapeHtml(row.symbol)}</button>
+      <strong>${escapeHtml(row.rating)}</strong>
+      <dl>
+        <div><dt>Price</dt><dd>${formatMoney(row.price, "")}</dd></div>
+        <div><dt>Score</dt><dd>${formatNumber(row.totalScore)}</dd></div>
+        <div><dt>Confidence</dt><dd>${escapeHtml(row.confidence || "N/A")}</dd></div>
+        <div><dt>1M</dt><dd class="${numberClass(row.oneMonth)}">${formatPercent(row.oneMonth)}</dd></div>
+        <div><dt>RSI</dt><dd>${formatNumber(row.rsi14)}</dd></div>
+      </dl>
+    </article>
+  `).join("") + (failures.length ? `<p class="empty-state">Failed: ${escapeHtml(failures.map((item) => item.symbol).join(", "))}</p>` : "");
+  document.querySelectorAll("[data-compare-symbol]").forEach((button) => {
+    button.addEventListener("click", () => {
+      symbolInput.value = button.dataset.compareSymbol;
+      analyze(button.dataset.compareSymbol);
+    });
+  });
 }
 
 async function runScreener() {
@@ -300,6 +433,7 @@ function renderScreenerRows() {
 
 function renderDashboard(data) {
   lastAnalysis = data;
+  homeState.hidden = true;
   dashboard.hidden = false;
   if (data.warnings?.length) {
     showNotice(data.warnings.join(" "));
@@ -323,6 +457,12 @@ function renderDashboard(data) {
   document.querySelector("#asOf").textContent = `As of ${new Date(data.asOf).toLocaleString()}`;
   renderBottomLine(data);
   renderVitalSigns(data);
+  renderInsights(data);
+  renderConfidence(data.confidence);
+  renderDataQuality(data.dataQuality || []);
+  renderTimeline(data.technicalTimeline || []);
+  renderHealth(data.fundamentalHealth || []);
+  renderFactors("#scoreExplanation", data.scoreExplanation || []);
 
   renderDefinitionList("#quoteStats", [
     ["Previous close", formatMoney(quote.previousClose, quote.currency)],
@@ -372,6 +512,7 @@ function renderDashboard(data) {
 
   chart.dataset.history = JSON.stringify(data.history || []);
   drawChart(data.history || []);
+  renderPortfolio();
 }
 
 async function loadAiStatus() {
@@ -400,6 +541,36 @@ function renderBottomLine(data) {
 
   renderRiskMeter("volatility", risk.volatility);
   renderRiskMeter("debt", risk.debt);
+}
+
+function renderInsights(data) {
+  renderFactors("#insightStrong", data.insights?.strong?.length ? data.insights.strong : ["No clear strength signal yet."]);
+  renderFactors("#insightWeak", data.insights?.weak?.length ? data.insights.weak : ["No major weakness signal dominates."]);
+  renderFactors("#insightChanged", data.insights?.changed?.length ? data.insights.changed : ["Not enough recent change data."]);
+}
+
+function renderConfidence(confidence) {
+  const value = confidence || "Low";
+  confidenceValue.textContent = value;
+  confidenceMeter.className = `meter-${value.toLowerCase()}`;
+}
+
+function renderDataQuality(items) {
+  dataQuality.innerHTML = (items || []).map((item) => `
+    <span class="quality-badge quality-${escapeHtml(item.level || "info")}">${escapeHtml(item.label)}</span>
+  `).join("");
+}
+
+function renderTimeline(items) {
+  signalTimeline.innerHTML = items.length
+    ? items.map((item) => `<div class="timeline-item tone-${escapeHtml(item.tone)}"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`).join("")
+    : `<p class="empty-state">Not enough technical signals yet.</p>`;
+}
+
+function renderHealth(items) {
+  healthPanel.innerHTML = items.length
+    ? items.map((item) => `<div class="health-item tone-${escapeHtml(item.tone)}"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.status)}</strong></div>`).join("")
+    : `<p class="empty-state">Fundamental health is unavailable.</p>`;
 }
 
 function renderVitalSigns(data) {
@@ -467,6 +638,138 @@ function renderWatchlist() {
   });
 }
 
+function getHoldings() {
+  try {
+    return JSON.parse(localStorage.getItem("stockAnalyzerPortfolio") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveHoldings(holdings) {
+  localStorage.setItem("stockAnalyzerPortfolio", JSON.stringify(holdings));
+}
+
+function addHolding() {
+  const symbol = portfolioSymbol.value.trim().toUpperCase();
+  const shares = Number(portfolioShares.value);
+  const cost = Number(portfolioCost.value);
+  if (!symbol || !Number.isFinite(shares) || shares <= 0 || !Number.isFinite(cost) || cost < 0) return;
+  const holdings = [{ symbol, shares, cost }, ...getHoldings()].slice(0, 25);
+  saveHoldings(holdings);
+  portfolioSymbol.value = "";
+  portfolioShares.value = "";
+  portfolioCost.value = "";
+  renderPortfolio();
+}
+
+function removeHolding(index) {
+  const holdings = getHoldings();
+  holdings.splice(index, 1);
+  saveHoldings(holdings);
+  renderPortfolio();
+}
+
+function renderPortfolio() {
+  const holdings = getHoldings();
+  if (!holdings.length) {
+    portfolioSummary.textContent = "Sandbox is local-only. Add fake holdings to estimate allocation and P/L.";
+    portfolioRows.innerHTML = `<tr><td colspan="6">No fake holdings yet.</td></tr>`;
+    return;
+  }
+
+  const enriched = holdings.map((holding) => {
+    const livePrice = lastAnalysis?.symbol === holding.symbol ? lastAnalysis.quote.price : null;
+    const price = Number.isFinite(livePrice) ? livePrice : holding.cost;
+    const value = holding.shares * price;
+    const costBasis = holding.shares * holding.cost;
+    return { ...holding, price, value, costBasis, pnl: value - costBasis };
+  });
+  const totalValue = enriched.reduce((sum, item) => sum + item.value, 0);
+  const totalPnl = enriched.reduce((sum, item) => sum + item.pnl, 0);
+  portfolioSummary.textContent = `Estimated value ${formatMoney(totalValue, "")}. Estimated P/L ${formatSigned(totalPnl)}. Prices use the currently analyzed symbol when available.`;
+  portfolioRows.innerHTML = enriched.map((item, index) => `
+    <tr>
+      <td>${escapeHtml(item.symbol)}</td>
+      <td>${formatNumber(item.shares)}</td>
+      <td>${formatMoney(item.cost, "")}</td>
+      <td>${formatMoney(item.value, "")}</td>
+      <td class="${numberClass(item.pnl)}">${formatSigned(item.pnl)}</td>
+      <td><button class="symbol-link" type="button" data-remove-holding="${index}">Remove</button></td>
+    </tr>
+  `).join("");
+  document.querySelectorAll("[data-remove-holding]").forEach((button) => {
+    button.addEventListener("click", () => removeHolding(Number(button.dataset.removeHolding)));
+  });
+}
+
+function getCustomPresets() {
+  try {
+    return JSON.parse(localStorage.getItem("stockAnalyzerPresets") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomPreset() {
+  const name = presetName.value.trim();
+  const symbols = screenerSymbols.value.trim();
+  if (!name || !symbols) return;
+  const presets = [{ name, symbols }, ...getCustomPresets().filter((item) => item.name !== name)].slice(0, 12);
+  localStorage.setItem("stockAnalyzerPresets", JSON.stringify(presets));
+  presetName.value = "";
+  renderPresetCards();
+}
+
+function renderPresetCards() {
+  const builtIns = Object.entries(PRESET_LABELS).map(([value, label]) => ({ label, value, builtIn: true }));
+  const custom = getCustomPresets().map((item) => ({ label: item.name, symbols: item.symbols, builtIn: false }));
+  presetCards.innerHTML = [...builtIns, ...custom].map((preset) => `
+    <button type="button" data-preset-card="${escapeHtml(preset.value || "")}" data-preset-symbols="${escapeHtml(preset.symbols || "")}">
+      ${escapeHtml(preset.label)}
+    </button>
+  `).join("");
+  document.querySelectorAll("[data-preset-card]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const customSymbols = button.dataset.presetSymbols;
+      if (customSymbols) {
+        screenerSymbols.value = customSymbols;
+      } else {
+        screenerSymbols.value = "";
+        screenerPreset.value = button.dataset.presetCard;
+      }
+      runScreener();
+    });
+  });
+}
+
+function loadSettings() {
+  let settings = {};
+  try {
+    settings = JSON.parse(localStorage.getItem("stockAnalyzerSettings") || "{}");
+  } catch {
+    settings = {};
+  }
+  symbolInput.value = settings.defaultSymbol || symbolInput.value;
+  defaultSymbol.value = symbolInput.value;
+  if (settings.defaultRange) rangeSelect.value = settings.defaultRange;
+  defaultRange.value = rangeSelect.value;
+  densityMode.value = settings.density || "comfortable";
+  document.body.dataset.density = densityMode.value;
+}
+
+function saveSettings() {
+  const settings = {
+    defaultSymbol: defaultSymbol.value.trim().toUpperCase() || "AAPL",
+    defaultRange: defaultRange.value,
+    density: densityMode.value
+  };
+  localStorage.setItem("stockAnalyzerSettings", JSON.stringify(settings));
+  symbolInput.value = settings.defaultSymbol;
+  rangeSelect.value = settings.defaultRange;
+  document.body.dataset.density = settings.density;
+}
+
 function renderDefinitionList(selector, rows) {
   document.querySelector(selector).innerHTML = rows.map(([label, value]) => `
     <div>
@@ -486,7 +789,7 @@ function renderFactors(selector, items) {
   document.querySelector(selector).innerHTML = (items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
-function drawChart(history) {
+function drawChart(history, hoverEvent = null) {
   const ratio = window.devicePixelRatio || 1;
   const rect = chart.getBoundingClientRect();
   chart.width = Math.max(320, Math.floor(rect.width * ratio));
@@ -505,15 +808,19 @@ function drawChart(history) {
   }
 
   const padding = { top: 18, right: 18, bottom: 34, left: 58 };
-  const closes = history.map((point) => point.close).filter((value) => Number.isFinite(value));
+  const baseClose = history.find((point) => Number.isFinite(point.close))?.close || 1;
+  const asChartValue = (value) => showPercent.checked && Number.isFinite(value)
+    ? ((value - baseClose) / baseClose) * 100
+    : value;
+  const closes = history.map((point) => asChartValue(point.close)).filter((value) => Number.isFinite(value));
   if (!closes.length) {
     ctx.fillStyle = "#677281";
     ctx.font = "16px system-ui";
     ctx.fillText("No usable close prices available", 24, 42);
     return;
   }
-  const sma50 = movingAverageSeries(history, 50);
-  const sma200 = movingAverageSeries(history, 200);
+  const sma50 = movingAverageSeries(history, 50).map(asChartValue);
+  const sma200 = movingAverageSeries(history, 200).map(asChartValue);
   const rsi14 = rsiSeries(history, 14);
   const visibleValues = [
     ...closes,
@@ -546,14 +853,15 @@ function drawChart(history) {
   for (let i = 0; i <= 4; i += 1) {
     const value = max - (span / 4) * i;
     const y = padding.top + (plotH / 4) * i + 4;
-    ctx.fillText(formatNumber(value), padding.left - 8, y);
+    ctx.fillText(showPercent.checked ? `${formatNumber(value)}%` : formatNumber(value), padding.left - 8, y);
   }
 
   const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + plotH);
   gradient.addColorStop(0, "rgba(15, 118, 110, 0.18)");
   gradient.addColorStop(1, "rgba(15, 118, 110, 0)");
-  fillArea(history.map((point) => point.close), gradient, (value) => padding.top + plotH - ((value - min) / span) * plotH);
-  drawLine(history.map((point) => point.close), "#0f766e", 2.5, (value) => padding.top + plotH - ((value - min) / span) * plotH);
+  const closeValues = history.map((point) => asChartValue(point.close));
+  fillArea(closeValues, gradient, (value) => padding.top + plotH - ((value - min) / span) * plotH);
+  drawLine(closeValues, "#0f766e", 2.5, (value) => padding.top + plotH - ((value - min) / span) * plotH);
 
   if (showSma50.checked) {
     drawLine(sma50, "#a15c07", 1.8, (value) => padding.top + plotH - ((value - min) / span) * plotH);
@@ -582,12 +890,42 @@ function drawChart(history) {
 
   ctx.fillStyle = "#677281";
   ctx.textAlign = "left";
-  ctx.fillText("Close", padding.left, 14);
+  ctx.fillText(showPercent.checked ? "% change" : "Close", padding.left, 14);
   if (showSma50.checked) ctx.fillText("50 SMA", padding.left + 54, 14);
   if (showSma200.checked) ctx.fillText("200 SMA", padding.left + 112, 14);
   ctx.fillText(history[0].date, padding.left, height - 12);
   ctx.textAlign = "right";
   ctx.fillText(history[history.length - 1].date, width - padding.right, height - 12);
+
+  if (hoverEvent) {
+    const bounds = chart.getBoundingClientRect();
+    const mouseX = hoverEvent.clientX - bounds.left;
+    const index = Math.max(0, Math.min(history.length - 1, Math.round(((mouseX - padding.left) / plotW) * (history.length - 1))));
+    const point = history[index];
+    const x = padding.left + (plotW * index) / Math.max(1, history.length - 1);
+    const yValue = asChartValue(point.close);
+    const y = padding.top + plotH - ((yValue - min) / span) * plotH;
+    ctx.strokeStyle = "rgba(17, 24, 39, 0.34)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, padding.top);
+    ctx.lineTo(x, padding.top + plotH);
+    ctx.stroke();
+    ctx.fillStyle = "#111827";
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    const label = `${point.date}  ${showPercent.checked ? formatPercent(yValue) : formatNumber(point.close)}`;
+    ctx.font = "12px system-ui";
+    const labelWidth = ctx.measureText(label).width + 16;
+    const boxX = Math.min(width - padding.right - labelWidth, Math.max(padding.left, x + 10));
+    const boxY = Math.max(padding.top + 4, y - 34);
+    ctx.fillStyle = "rgba(17, 24, 39, 0.9)";
+    ctx.fillRect(boxX, boxY, labelWidth, 26);
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "left";
+    ctx.fillText(label, boxX + 8, boxY + 17);
+  }
 
   function drawLine(values, color, lineWidth, mapY) {
     ctx.beginPath();
