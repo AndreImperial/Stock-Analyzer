@@ -11,10 +11,6 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const yahooFinancePromise = import("yahoo-finance2").then((module) => {
-  const candidate = module.default?.default || module.default || module.yahooFinance || module;
-  return typeof candidate === "function" ? new candidate() : candidate;
-});
 
 const RANGE_DAYS = {
   "1mo": 32,
@@ -36,11 +32,7 @@ app.get("/api/search", async (req, res) => {
   }
 
   try {
-    const yahooFinance = await getYahooFinance();
-    const result = await yahooFinance.search(q, {
-      quotesCount: 10,
-      newsCount: 0
-    });
+    const result = await yahooSearch(q);
 
     const results = (result.quotes || []).map((item) => ({
       symbol: item.symbol,
@@ -80,19 +72,16 @@ app.get("/api/analyze", async (req, res) => {
   const period1 = new Date(period2.getTime() - RANGE_DAYS[range] * 24 * 60 * 60 * 1000);
 
   try {
-    const yahooFinance = await getYahooFinance();
     const [quoteResult, summaryResult, historyResult] = await Promise.allSettled([
-      yahooFinance.quote(symbol),
-      yahooFinance.quoteSummary(symbol, {
-        modules: [
-          "assetProfile",
-          "summaryDetail",
-          "defaultKeyStatistics",
-          "financialData",
-          "price"
-        ]
-      }),
-      yahooFinance.historical(symbol, { period1, period2, interval })
+      yahooQuote(symbol),
+      yahooQuoteSummary(symbol, [
+        "assetProfile",
+        "summaryDetail",
+        "defaultKeyStatistics",
+        "financialData",
+        "price"
+      ]),
+      yahooHistorical(symbol, { period1, period2, interval })
     ]);
 
     const quote = unwrapSettled(quoteResult);
@@ -150,10 +139,6 @@ app.listen(PORT, () => {
 
 function unwrapSettled(result) {
   return result.status === "fulfilled" ? result.value : null;
-}
-
-function getYahooFinance() {
-  return yahooFinancePromise;
 }
 
 function buildQuote(quote, history) {
@@ -491,4 +476,80 @@ function formatNumber(value) {
 
 function cleanError(error) {
   return error?.message || "Unknown error";
+}
+
+async function yahooSearch(q) {
+  return yahooGet("https://query2.finance.yahoo.com/v1/finance/search", {
+    q,
+    quotesCount: 10,
+    newsCount: 0
+  });
+}
+
+async function yahooQuote(symbol) {
+  const data = await yahooGet("https://query1.finance.yahoo.com/v7/finance/quote", {
+    symbols: symbol
+  });
+  return data.quoteResponse?.result?.[0] || null;
+}
+
+async function yahooQuoteSummary(symbol, modules) {
+  const data = await yahooGet(`https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}`, {
+    modules: modules.join(",")
+  });
+  return data.quoteSummary?.result?.[0] || null;
+}
+
+async function yahooHistorical(symbol, options) {
+  const data = await yahooGet(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`, {
+    period1: Math.floor(options.period1.getTime() / 1000),
+    period2: Math.floor(options.period2.getTime() / 1000),
+    interval: options.interval,
+    events: "history",
+    includeAdjustedClose: "true"
+  });
+
+  const result = data.chart?.result?.[0];
+  if (!result) return [];
+
+  const timestamps = result.timestamp || [];
+  const quote = result.indicators?.quote?.[0] || {};
+  return timestamps.map((timestamp, index) => ({
+    date: new Date(timestamp * 1000),
+    open: quote.open?.[index],
+    high: quote.high?.[index],
+    low: quote.low?.[index],
+    close: quote.close?.[index],
+    volume: quote.volume?.[index]
+  }));
+}
+
+async function yahooGet(baseUrl, params) {
+  const url = new URL(baseUrl);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) {
+      url.searchParams.set(key, String(value));
+    }
+  });
+
+  const response = await fetch(url, {
+    headers: {
+      "Accept": "application/json",
+      "User-Agent": "Mozilla/5.0 GlobalMarketAnalyzer/0.1"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Yahoo request failed with HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  const chartError = data.chart?.error;
+  const financeError = data.finance?.error;
+  const summaryError = data.quoteSummary?.error;
+  const error = chartError || financeError || summaryError;
+  if (error) {
+    throw new Error(error.description || error.message || "Yahoo request failed");
+  }
+  return data;
 }
