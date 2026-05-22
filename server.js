@@ -1045,27 +1045,85 @@ async function nasdaqSummary(symbol) {
 }
 
 async function yahooHistorical(symbol, options) {
-  const data = await yahooGet(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`, {
-    period1: Math.floor(options.period1.getTime() / 1000),
-    period2: Math.floor(options.period2.getTime() / 1000),
-    interval: options.interval,
-    events: "history",
-    includeAdjustedClose: "true"
+  try {
+    const data = await yahooGet(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`, {
+      period1: Math.floor(options.period1.getTime() / 1000),
+      period2: Math.floor(options.period2.getTime() / 1000),
+      interval: options.interval,
+      events: "history",
+      includeAdjustedClose: "true"
+    });
+
+    const result = data.chart?.result?.[0];
+    if (!result) return isPseSymbol(symbol) ? stockAnalysisPseHistorical(symbol) : [];
+
+    const timestamps = result.timestamp || [];
+    const quote = result.indicators?.quote?.[0] || {};
+    const rows = timestamps.map((timestamp, index) => ({
+      date: new Date(timestamp * 1000),
+      open: quote.open?.[index],
+      high: quote.high?.[index],
+      low: quote.low?.[index],
+      close: quote.close?.[index],
+      volume: quote.volume?.[index]
+    }));
+
+    if (rows.length === 0 && isPseSymbol(symbol)) {
+      return stockAnalysisPseHistorical(symbol);
+    }
+
+    return rows;
+  } catch (error) {
+    if (isPseSymbol(symbol)) {
+      return stockAnalysisPseHistorical(symbol);
+    }
+    throw error;
+  }
+}
+
+async function stockAnalysisPseHistorical(symbol) {
+  const ticker = symbol.replace(/\.PS$/i, "");
+  const response = await fetch(`https://stockanalysis.com/quote/pse/${encodeURIComponent(ticker)}/history/`, {
+    headers: {
+      "Accept": "text/html",
+      "User-Agent": "Mozilla/5.0 GlobalMarketAnalyzer/0.1"
+    }
   });
 
-  const result = data.chart?.result?.[0];
-  if (!result) return [];
+  if (!response.ok) {
+    throw new Error(`PSE history fallback failed with HTTP ${response.status}`);
+  }
 
-  const timestamps = result.timestamp || [];
-  const quote = result.indicators?.quote?.[0] || {};
-  return timestamps.map((timestamp, index) => ({
-    date: new Date(timestamp * 1000),
-    open: quote.open?.[index],
-    high: quote.high?.[index],
-    low: quote.low?.[index],
-    close: quote.close?.[index],
-    volume: quote.volume?.[index]
-  }));
+  const html = await response.text();
+  const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)]
+    .map((match) => [...match[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
+      .map((cell) => cleanHtmlCell(cell[1])))
+    .filter((cells) => cells.length >= 8)
+    .map((cells) => ({
+      date: new Date(cells[0]),
+      open: parseNumberText(cells[1]),
+      high: parseNumberText(cells[2]),
+      low: parseNumberText(cells[3]),
+      close: parseNumberText(cells[4]),
+      volume: parseNumberText(cells[7])
+    }))
+    .filter((row) => row.date instanceof Date && !Number.isNaN(row.date.getTime()) && isFiniteNumber(row.close))
+    .reverse();
+
+  return rows;
+}
+
+function cleanHtmlCell(value) {
+  return String(value)
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+function isPseSymbol(symbol) {
+  return /\.PS$/i.test(symbol);
 }
 
 async function yahooGet(baseUrl, params) {
