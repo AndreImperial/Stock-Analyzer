@@ -9,7 +9,13 @@
   <body>
     <main class="shell">
       <header class="app-header">
-        <strong>Stock Analyzer</strong>
+        <div class="brand-lockup">
+          <span class="brand-mark">SA</span>
+          <div>
+            <strong>Stock Analyzer</strong>
+            <small>Research workspace</small>
+          </div>
+        </div>
         <div class="header-status">
           <span id="aiStatus">Rules fallback</span>
           <span id="marketStatus">Market data</span>
@@ -17,6 +23,9 @@
       </header>
 
       <section class="command-bar">
+        <div class="command-title">
+          <span>Analyze anything Yahoo-compatible</span>
+        </div>
         <form id="analyzeForm" class="search-form">
           <div class="field symbol-field">
             <label for="symbolInput">Symbol</label>
@@ -45,6 +54,7 @@
         </form>
 
         <div class="quick-row">
+          <span>Try</span>
           <button data-symbol="AAPL">AAPL</button>
           <button data-symbol="SPY">SPY</button>
           <button data-symbol="BTC-USD">BTC</button>
