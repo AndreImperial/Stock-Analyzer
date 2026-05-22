@@ -9,24 +9,21 @@
   <body>
     <main class="shell">
       <header class="app-header">
-        <div>
-          <h1>Stock Analyzer</h1>
-          <p>Free fundamentals, technicals, news, and screeners.</p>
-        </div>
+        <strong>Stock Analyzer</strong>
         <div class="header-status">
-          <span id="aiStatus">Checking AI</span>
+          <span id="aiStatus">Rules fallback</span>
           <span id="marketStatus">Market data</span>
         </div>
       </header>
 
-      <section class="toolbar">
+      <section class="command-bar">
         <form id="analyzeForm" class="search-form">
           <div class="field symbol-field">
             <label for="symbolInput">Symbol</label>
-            <input id="symbolInput" name="symbol" type="text" value="AAPL" autocomplete="off" placeholder="AAPL, SPY, BTC-USD, EURUSD=X">
+            <input id="symbolInput" name="symbol" type="text" value="AAPL" autocomplete="off" placeholder="AAPL, SPY, BTC-USD, EURUSD=X, JFC.PS">
             <div class="search-results" id="searchResults" hidden></div>
           </div>
-          <div class="field compact-field">
+          <div class="field">
             <label for="rangeSelect">Range</label>
             <select id="rangeSelect" name="range">
               <option value="3mo">3M</option>
@@ -36,7 +33,7 @@
               <option value="5y">5Y</option>
             </select>
           </div>
-          <div class="field compact-field">
+          <div class="field">
             <label for="intervalSelect">Interval</label>
             <select id="intervalSelect" name="interval">
               <option value="1d" selected>Daily</option>
@@ -50,9 +47,9 @@
         <div class="quick-row">
           <button data-symbol="AAPL">AAPL</button>
           <button data-symbol="SPY">SPY</button>
-          <button data-symbol="BTC-USD">BTC</button>
-          <button data-symbol="EURUSD=X">EUR/USD</button>
-          <button data-symbol="^GSPC">S&P 500</button>
+          <button data-symbol="BTC-USD">BTC-USD</button>
+          <button data-symbol="EURUSD=X">EURUSD=X</button>
+          <button data-symbol="^GSPC">^GSPC</button>
           <button data-symbol="JFC.PS">JFC.PS</button>
         </div>
       </section>
@@ -60,42 +57,39 @@
       <section class="notice" id="notice" hidden></section>
 
       <section class="dashboard" id="dashboard" hidden>
-        <section class="summary-panel">
-          <div class="quote-main">
+        <section class="analysis-layout">
+          <aside class="result-panel">
             <p class="label" id="assetType">Quote</p>
-            <h2 id="assetName">AAPL</h2>
+            <h1 id="assetName">AAPL</h1>
             <div class="price-row">
               <strong id="price">--</strong>
               <span id="change">--</span>
             </div>
-            <button class="secondary-button" id="addWatchlist" type="button">Save</button>
-            <dl class="mini-stats" id="quoteStats"></dl>
-          </div>
 
-          <div class="rating-main">
-            <p class="label">Rating</p>
-            <h2 id="rating">Neutral</h2>
-            <div class="score-line">
-              <span>Total <strong id="scoreRing">0</strong></span>
-              <span>Fund <strong id="fundScore">0</strong></span>
-              <span>Tech <strong id="techScore">0</strong></span>
+            <div class="rating-strip">
+              <div>
+                <span>Rating</span>
+                <strong id="rating">Neutral</strong>
+              </div>
+              <div>
+                <span>Total</span>
+                <strong id="scoreRing">0</strong>
+              </div>
+              <div>
+                <span>Fund</span>
+                <strong id="fundScore">0</strong>
+              </div>
+              <div>
+                <span>Tech</span>
+                <strong id="techScore">0</strong>
+              </div>
             </div>
+
+            <h2 id="bottomLineHeadline">Summary</h2>
+            <p class="bottom-line-text" id="bottomLineText"></p>
+            <p class="missing-notes" id="missingNotes"></p>
             <p class="caveat" id="caveat"></p>
-          </div>
-        </section>
 
-        <section class="bottom-line-section">
-          <div class="section-head">
-            <h2 id="bottomLineHeadline">Plain-English summary</h2>
-            <span class="status-pill" id="summarySource">Rules</span>
-          </div>
-          <p class="bottom-line-text" id="bottomLineText"></p>
-          <p class="missing-notes" id="missingNotes"></p>
-          <div class="watch-grid">
-            <div>
-              <h3>Watch</h3>
-              <ul id="watchItems"></ul>
-            </div>
             <div class="risk-box">
               <div class="risk-meter">
                 <span>Volatility</span>
@@ -110,96 +104,73 @@
                 <small id="debtLabel">Not available</small>
               </div>
             </div>
-          </div>
+          </aside>
+
+          <section class="chart-panel">
+            <div class="panel-head">
+              <h2 id="chartTitle">Chart</h2>
+              <span id="asOf"></span>
+            </div>
+            <div class="chart-controls" aria-label="Chart overlays">
+              <label><input type="checkbox" id="showSma50" checked> 50 SMA</label>
+              <label><input type="checkbox" id="showSma200" checked> 200 SMA</label>
+              <label><input type="checkbox" id="showRsi" checked> RSI</label>
+            </div>
+            <canvas id="priceChart" width="1200" height="430"></canvas>
+          </section>
         </section>
 
-        <section class="vital-grid" aria-label="Vital signs">
-          <article>
-            <p class="label">P/E <span class="term" data-tip="Price compared with company earnings. Compare it with similar companies.">?</span></p>
-            <strong id="vitalPe">N/A</strong>
-          </article>
-          <article>
-            <p class="label">Market Cap <span class="term" data-tip="Total market value of the company.">?</span></p>
-            <strong id="vitalMarketCap">N/A</strong>
-          </article>
-          <article>
-            <p class="label">Dividend <span class="term" data-tip="Annual dividend as a percentage of price.">?</span></p>
-            <strong id="vitalDividend">N/A</strong>
-          </article>
-          <article>
-            <p class="label">1Y Growth <span class="term" data-tip="Price performance over roughly the last year.">?</span></p>
-            <strong id="vitalGrowth">N/A</strong>
-          </article>
-        </section>
-
-        <section class="chart-section">
-          <div class="section-head">
-            <h2 id="chartTitle">Chart</h2>
-            <span id="asOf"></span>
-          </div>
-          <div class="chart-controls" aria-label="Chart overlays">
-            <label><input type="checkbox" id="showSma50" checked> 50 SMA</label>
-            <label><input type="checkbox" id="showSma200" checked> 200 SMA</label>
-            <label><input type="checkbox" id="showRsi" checked> RSI</label>
-          </div>
-          <canvas id="priceChart" width="1200" height="430"></canvas>
-        </section>
-
-        <section class="watchlist-panel">
-          <div class="section-head">
-            <h2>Watchlist</h2>
-            <button class="secondary-button" id="clearWatchlist" type="button">Clear</button>
-          </div>
-          <div class="watchlist" id="watchlist"></div>
-        </section>
-
-        <details class="details-panel">
-          <summary>Details</summary>
-          <div class="details-grid">
+        <section class="data-panel">
+          <div class="vital-grid" aria-label="Vital signs">
             <article>
-              <h2>Fundamentals</h2>
-              <dl class="metric-grid" id="fundamentals"></dl>
+              <p class="label">P/E <span class="term" data-tip="Price compared with earnings.">?</span></p>
+              <strong id="vitalPe">N/A</strong>
             </article>
             <article>
-              <h2>Technicals</h2>
-              <dl class="metric-grid" id="technicals"></dl>
+              <p class="label">Market Cap <span class="term" data-tip="Total market value.">?</span></p>
+              <strong id="vitalMarketCap">N/A</strong>
             </article>
             <article>
-              <h2>Performance</h2>
-              <dl class="metric-grid" id="performance"></dl>
+              <p class="label">Dividend <span class="term" data-tip="Annual dividend as a percent of price.">?</span></p>
+              <strong id="vitalDividend">N/A</strong>
             </article>
             <article>
-              <h2>Factors</h2>
-              <div class="factor-columns">
-                <div>
-                  <h3>Fundamental</h3>
+              <p class="label">1Y Growth <span class="term" data-tip="Price performance over roughly one year.">?</span></p>
+              <strong id="vitalGrowth">N/A</strong>
+            </article>
+          </div>
+
+          <details>
+            <summary>More analysis</summary>
+            <div class="details-grid">
+              <article>
+                <h2>Fundamentals</h2>
+                <dl class="metric-grid" id="fundamentals"></dl>
+              </article>
+              <article>
+                <h2>Technicals</h2>
+                <dl class="metric-grid" id="technicals"></dl>
+              </article>
+              <article>
+                <h2>Performance</h2>
+                <dl class="metric-grid" id="performance"></dl>
+              </article>
+              <article>
+                <h2>Watch</h2>
+                <ul id="watchItems"></ul>
+                <h2>Factors</h2>
+                <div class="factor-columns">
                   <ul id="fundFactors"></ul>
-                </div>
-                <div>
-                  <h3>Technical</h3>
                   <ul id="techFactors"></ul>
                 </div>
-              </div>
-            </article>
-          </div>
-        </details>
-
-        <details class="details-panel">
-          <summary>Latest news</summary>
-          <div class="news-section">
-            <div class="section-head">
-              <h2 id="newsTitle">Symbol news</h2>
-              <button class="secondary-button" id="refreshNews" type="button">Refresh</button>
+              </article>
             </div>
-            <div class="news-list" id="newsList">
-              <p class="empty-state">News will load after analysis.</p>
-            </div>
-          </div>
-        </details>
+          </details>
+        </section>
       </section>
 
       <section class="screener-panel">
-        <div class="section-head">
+        <div class="panel-head">
           <h2>Screener</h2>
           <button class="primary-button compact-button" id="runScreener" type="button">Run</button>
         </div>
@@ -209,17 +180,17 @@
             <label for="screenerPreset">Preset</label>
             <select id="screenerPreset">
               <option value="default" selected>Default</option>
-              <option value="stable-dividend">Stable dividend</option>
+              <option value="stable-dividend">Dividend</option>
               <option value="momentum">Momentum</option>
               <option value="oversold-watch">Oversold</option>
-              <option value="low-volatility">Low volatility</option>
-              <option value="forex-majors">Forex majors</option>
-              <option value="pse">Philippine stocks</option>
+              <option value="low-volatility">Low vol</option>
+              <option value="forex-majors">Forex</option>
+              <option value="pse">PSE</option>
             </select>
           </div>
           <div class="field">
             <label for="screenerSymbols">Symbols</label>
-            <textarea id="screenerSymbols" rows="2" placeholder="Optional: AAPL, MSFT, SPY"></textarea>
+            <textarea id="screenerSymbols" rows="1" placeholder="Optional: AAPL, MSFT, SPY"></textarea>
           </div>
           <div class="field">
             <label for="screenerRating">Rating</label>
@@ -231,7 +202,7 @@
             </select>
           </div>
           <div class="field">
-            <label for="screenerMinScore">Min score</label>
+            <label for="screenerMinScore">Min</label>
             <input id="screenerMinScore" type="number" step="0.25" value="-99">
           </div>
         </div>
@@ -259,6 +230,17 @@
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section class="hidden-support" aria-hidden="true">
+        <span id="summarySource">Rules</span>
+        <button id="addWatchlist" type="button"></button>
+        <button id="clearWatchlist" type="button"></button>
+        <div id="watchlist"></div>
+        <dl id="quoteStats"></dl>
+        <h2 id="newsTitle"></h2>
+        <button id="refreshNews" type="button"></button>
+        <div id="newsList"></div>
       </section>
     </main>
 
