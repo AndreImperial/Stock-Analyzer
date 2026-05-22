@@ -4,7 +4,7 @@
   "description": "Local web app for educational fundamental and technical analysis of global market symbols.",
   "main": "server.js",
   "engines": {
-    "node": ">=18"
+    "node": ">=22.0.0 <23.0.0"
   },
   "scripts": {
     "start": "node server.js",
