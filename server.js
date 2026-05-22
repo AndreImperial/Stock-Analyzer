@@ -11,7 +11,10 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const yahooFinancePromise = import("yahoo-finance2").then((module) => module.default || module);
+const yahooFinancePromise = import("yahoo-finance2").then((module) => {
+  const candidate = module.default?.default || module.default || module.yahooFinance || module;
+  return typeof candidate === "function" ? new candidate() : candidate;
+});
 
 const RANGE_DAYS = {
   "1mo": 32,
