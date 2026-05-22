@@ -10,8 +10,8 @@
     <main class="shell">
       <section class="topbar">
         <div>
-          <p class="eyebrow">Global Market Analyzer</p>
-          <h1>Fundamental and technical analysis for world markets</h1>
+          <p class="eyebrow">Beginner Market Screener</p>
+          <h1>Clear stock, forex, and ETF research without the clutter</h1>
         </div>
         <div class="status-pill" id="marketStatus">Local MVP</div>
       </section>
@@ -110,6 +110,61 @@
       </section>
 
       <section class="dashboard" id="dashboard" hidden>
+        <section class="bottom-line-section">
+          <div class="section-head">
+            <div>
+              <p class="label">The bottom line</p>
+              <h2 id="bottomLineHeadline">Plain-English summary</h2>
+            </div>
+            <span class="status-pill" id="summarySource">Rules</span>
+          </div>
+          <p class="bottom-line-text" id="bottomLineText"></p>
+          <div class="watch-grid">
+            <div>
+              <h3>What to watch</h3>
+              <ul id="watchItems"></ul>
+            </div>
+            <div>
+              <h3>Risk meters</h3>
+              <div class="risk-meter">
+                <span>Volatility</span>
+                <strong id="volatilityRisk">Unknown</strong>
+                <div class="meter-track"><i id="volatilityMeter"></i></div>
+                <small id="volatilityLabel">Not enough data</small>
+              </div>
+              <div class="risk-meter">
+                <span>Debt</span>
+                <strong id="debtRisk">Unknown</strong>
+                <div class="meter-track"><i id="debtMeter"></i></div>
+                <small id="debtLabel">Not available</small>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="vital-grid" aria-label="Vital signs">
+          <article>
+            <p class="label">P/E Ratio</p>
+            <strong id="vitalPe">N/A</strong>
+            <span>Price compared with company earnings.</span>
+          </article>
+          <article>
+            <p class="label">Market Cap</p>
+            <strong id="vitalMarketCap">N/A</strong>
+            <span>Total market value of the company.</span>
+          </article>
+          <article>
+            <p class="label">Dividend Yield</p>
+            <strong id="vitalDividend">N/A</strong>
+            <span>Income paid compared with the price.</span>
+          </article>
+          <article>
+            <p class="label">1-Year Growth</p>
+            <strong id="vitalGrowth">N/A</strong>
+            <span>Price performance over the past year.</span>
+          </article>
+        </section>
+
         <div class="summary-grid">
           <article class="score-card">
             <div class="score-head">

@@ -253,6 +253,8 @@ function renderDashboard(data) {
   document.querySelector("#change").className = quote.changePercent > 0 ? "positive" : quote.changePercent < 0 ? "negative" : "";
   document.querySelector("#chartTitle").textContent = `${data.symbol} close price`;
   document.querySelector("#asOf").textContent = `As of ${new Date(data.asOf).toLocaleString()}`;
+  renderBottomLine(data);
+  renderVitalSigns(data);
 
   renderDefinitionList("#quoteStats", [
     ["Previous close", formatMoney(quote.previousClose, quote.currency)],
@@ -302,6 +304,36 @@ function renderDashboard(data) {
 
   chart.dataset.history = JSON.stringify(data.history || []);
   drawChart(data.history || []);
+}
+
+function renderBottomLine(data) {
+  const bottomLine = data.bottomLine || {};
+  const risk = data.risk || {};
+
+  document.querySelector("#bottomLineHeadline").textContent = bottomLine.headline || `${data.symbol} summary`;
+  document.querySelector("#bottomLineText").textContent = bottomLine.summary || data.analysis.caveat;
+  document.querySelector("#summarySource").textContent = bottomLine.source === "OpenAI" ? "AI summary" : "Rules summary";
+  document.querySelector("#watchItems").innerHTML = (bottomLine.watch || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+
+  renderRiskMeter("volatility", risk.volatility);
+  renderRiskMeter("debt", risk.debt);
+}
+
+function renderVitalSigns(data) {
+  document.querySelector("#vitalPe").textContent = formatNumber(data.fundamentals.trailingPE || data.fundamentals.forwardPE);
+  document.querySelector("#vitalMarketCap").textContent = formatCompact(data.fundamentals.marketCap);
+  document.querySelector("#vitalDividend").textContent = formatPercentRatio(data.fundamentals.dividendYield);
+  document.querySelector("#vitalGrowth").textContent = formatPercent(data.performance.ytd ?? data.performance.threeMonth ?? data.performance.oneMonth);
+}
+
+function renderRiskMeter(kind, risk) {
+  const level = risk?.level || "Unknown";
+  const label = risk?.label || "Not available";
+  const className = `meter-${level.toLowerCase()}`;
+
+  document.querySelector(`#${kind}Risk`).textContent = level;
+  document.querySelector(`#${kind}Label`).textContent = label;
+  document.querySelector(`#${kind}Meter`).className = className;
 }
 
 function renderDefinitionList(selector, rows) {

@@ -22,6 +22,7 @@ const RANGE_DAYS = {
 };
 
 const VALID_INTERVALS = new Set(["1d", "1wk", "1mo"]);
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
 const DEFAULT_SCREENER_SYMBOLS = [
   "AAPL",
   "MSFT",
@@ -307,15 +308,22 @@ async function analyzeSymbol(symbol, range, interval, includeHistory) {
   const technicals = buildTechnicals(history);
   const performance = buildPerformance(history);
   const analysis = buildAnalysis(fundamentals, technicals, performance, quote);
+  const finalQuote = buildQuote(quote, history, symbol);
+  const risk = buildRiskProfile(fundamentals, technicals);
+  const bottomLine = includeHistory
+    ? await buildBottomLine({ symbol, quote: finalQuote, fundamentals, technicals, performance, analysis, risk })
+    : buildBottomLineFallback({ symbol, quote: finalQuote, fundamentals, technicals, performance, analysis, risk });
 
   return {
     symbol,
     asOf: new Date().toISOString(),
-    quote: buildQuote(quote, history, symbol),
+    quote: finalQuote,
     fundamentals,
     technicals,
     performance,
     analysis,
+    risk,
+    bottomLine,
     history: includeHistory ? history : [],
     warnings: buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, history, fundamentals, quote)
   };
@@ -564,6 +572,149 @@ function buildAnalysis(fundamentals, technicals, performance, quote) {
     technicalFactors,
     caveat: "Educational analysis only. Data may be delayed, incomplete, or unavailable for some global assets. This is not financial advice."
   };
+}
+
+function buildRiskProfile(fundamentals, technicals) {
+  const volatilityPercent = isFiniteNumber(technicals.atr14) && isFiniteNumber(technicals.close) && technicals.close !== 0
+    ? round((technicals.atr14 / technicals.close) * 100)
+    : null;
+
+  const volatilityLevel = !isFiniteNumber(volatilityPercent)
+    ? "Unknown"
+    : volatilityPercent < 2
+      ? "Low"
+      : volatilityPercent < 5
+        ? "Medium"
+        : "High";
+
+  const debt = fundamentals.debtToEquity;
+  const debtLevel = !isFiniteNumber(debt)
+    ? "Unknown"
+    : debt < 80
+      ? "Low"
+      : debt < 180
+        ? "Medium"
+        : "High";
+
+  return {
+    volatility: {
+      level: volatilityLevel,
+      value: volatilityPercent,
+      label: isFiniteNumber(volatilityPercent) ? `${formatNumber(volatilityPercent)}% ATR/price` : "Not enough data"
+    },
+    debt: {
+      level: debtLevel,
+      value: isFiniteNumber(debt) ? debt : null,
+      label: isFiniteNumber(debt) ? `${formatNumber(debt)} debt/equity` : "Not available"
+    }
+  };
+}
+
+async function buildBottomLine(context) {
+  const fallback = buildBottomLineFallback(context);
+  if (!process.env.OPENAI_API_KEY) return fallback;
+
+  try {
+    const aiText = await generateAiBottomLine(context);
+    return {
+      ...fallback,
+      source: "OpenAI",
+      summary: aiText || fallback.summary
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function buildBottomLineFallback({ symbol, quote, fundamentals, technicals, performance, analysis, risk }) {
+  const name = quote.name || symbol;
+  const type = quote.type || "asset";
+  const rating = analysis.rating.toLowerCase();
+  const oneMonth = isFiniteNumber(performance.oneMonth) ? `${performance.oneMonth > 0 ? "up" : "down"} ${formatNumber(Math.abs(performance.oneMonth))}% over one month` : "without enough one-month history";
+  const trend = technicals.aboveSma50 === true
+    ? "trading above its 50-period average"
+    : technicals.aboveSma50 === false
+      ? "trading below its 50-period average"
+      : "without a clear 50-period trend signal";
+  const fundamentalsText = hasFundamentalData(fundamentals)
+    ? `Core fundamentals show ${fundamentals.sector || "available company"} context, market cap ${formatNumber(fundamentals.marketCap || 0)}, and dividend yield ${isFiniteNumber(fundamentals.dividendYield) ? `${formatNumber(fundamentals.dividendYield * 100)}%` : "not available"}.`
+    : "Company fundamentals are limited for this symbol, so the read leans more heavily on price action.";
+
+  return {
+    source: "Rules",
+    headline: `${name} is currently ${analysis.rating}`,
+    summary: `${symbol} is a ${type} with a ${rating} educational score. It is ${oneMonth} and is ${trend}. ${fundamentalsText} Volatility risk is ${risk.volatility.level.toLowerCase()}, while debt risk is ${risk.debt.level.toLowerCase()}. This is a research summary, not a buy or sell recommendation.`,
+    watch: buildWatchItems(fundamentals, technicals, performance, risk),
+    confidence: buildConfidence(fundamentals, technicals)
+  };
+}
+
+function buildWatchItems(fundamentals, technicals, performance, risk) {
+  const items = [];
+  if (isFiniteNumber(technicals.rsi14) && technicals.rsi14 > 70) items.push("RSI is elevated, so short-term momentum may be stretched.");
+  if (isFiniteNumber(technicals.rsi14) && technicals.rsi14 < 30) items.push("RSI is depressed, so the asset may be oversold.");
+  if (technicals.aboveSma200 === false) items.push("Price is below the 200-period average, which weakens the long-term trend.");
+  if (isFiniteNumber(performance.threeMonth) && performance.threeMonth < -10) items.push("Three-month performance is sharply negative.");
+  if (risk.volatility.level === "High") items.push("Volatility is high; position sizing and patience matter more.");
+  if (risk.debt.level === "High") items.push("Debt is elevated compared with equity.");
+  if (hasFundamentalData(fundamentals) && !items.length) items.push("No single risk flag dominates; compare valuation and trend with peers.");
+  return items.slice(0, 4);
+}
+
+function buildConfidence(fundamentals, technicals) {
+  let points = 0;
+  if (hasFundamentalData(fundamentals)) points += 1;
+  if (isFiniteNumber(technicals.sma50)) points += 1;
+  if (isFiniteNumber(technicals.sma200)) points += 1;
+  if (isFiniteNumber(technicals.rsi14)) points += 1;
+  return points >= 3 ? "High" : points >= 2 ? "Medium" : "Low";
+}
+
+async function generateAiBottomLine({ symbol, quote, fundamentals, technicals, performance, analysis, risk }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        store: false,
+        instructions: "Write a beginner-friendly market summary. Be clear, calm, and educational. Do not give buy, sell, hold, price target, or personalized financial advice. Mention uncertainty and missing data when relevant.",
+        input: JSON.stringify({
+          symbol,
+          quote,
+          fundamentals,
+          technicals,
+          performance,
+          rating: analysis.rating,
+          risk
+        }),
+        text: { verbosity: "low" }
+      })
+    });
+
+    if (!response.ok) throw new Error(`OpenAI request failed with HTTP ${response.status}`);
+    const data = await response.json();
+    return extractResponseText(data);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function extractResponseText(data) {
+  if (typeof data.output_text === "string") return data.output_text;
+  return (data.output || [])
+    .flatMap((item) => item.content || [])
+    .map((content) => content.text || "")
+    .filter(Boolean)
+    .join("\n")
+    .trim();
 }
 
 function buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, history, fundamentals, quote) {
