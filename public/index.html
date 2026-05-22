@@ -13,7 +13,10 @@
           <p class="eyebrow">Beginner Market Screener</p>
           <h1>Clear stock, forex, and ETF research without the clutter</h1>
         </div>
-        <div class="status-pill" id="marketStatus">Local MVP</div>
+        <div class="top-pills">
+          <div class="status-pill" id="aiStatus">Checking AI</div>
+          <div class="status-pill" id="marketStatus">Local MVP</div>
+        </div>
       </section>
 
       <section class="search-panel">
@@ -50,6 +53,8 @@
           <button data-symbol="BTC-USD">BTC-USD</button>
           <button data-symbol="EURUSD=X">EURUSD=X</button>
           <button data-symbol="^GSPC">^GSPC</button>
+          <button data-symbol="JFC.PS">JFC.PS</button>
+          <button data-symbol="SM.PS">SM.PS</button>
         </div>
       </section>
 
@@ -65,6 +70,18 @@
         </div>
 
         <div class="screener-controls">
+          <div class="field">
+            <label for="screenerPreset">Preset</label>
+            <select id="screenerPreset">
+              <option value="default" selected>Default universe</option>
+              <option value="stable-dividend">Stable dividend</option>
+              <option value="momentum">Momentum</option>
+              <option value="oversold-watch">Oversold watch</option>
+              <option value="low-volatility">Low volatility</option>
+              <option value="forex-majors">Forex majors</option>
+              <option value="pse">Philippine stocks</option>
+            </select>
+          </div>
           <div class="field">
             <label for="screenerSymbols">Symbols</label>
             <textarea id="screenerSymbols" rows="3" placeholder="Leave blank for default universe, or enter: AAPL, MSFT, SPY, BTC-USD, EURUSD=X"></textarea>
@@ -89,14 +106,14 @@
           <table class="screener-table">
             <thead>
               <tr>
-                <th>Symbol</th>
-                <th>Rating</th>
-                <th>Score</th>
-                <th>Price</th>
-                <th>1M</th>
-                <th>3M</th>
-                <th>RSI</th>
-                <th>Trend</th>
+                <th><button class="sort-button" type="button" data-sort="symbol">Symbol</button></th>
+                <th><button class="sort-button" type="button" data-sort="rating">Rating</button></th>
+                <th><button class="sort-button" type="button" data-sort="totalScore">Score</button></th>
+                <th><button class="sort-button" type="button" data-sort="price">Price</button></th>
+                <th><button class="sort-button" type="button" data-sort="oneMonth">1M</button></th>
+                <th><button class="sort-button" type="button" data-sort="threeMonth">3M</button></th>
+                <th><button class="sort-button" type="button" data-sort="rsi14">RSI</button></th>
+                <th><button class="sort-button" type="button" data-sort="volatility">Volatility</button></th>
                 <th>Factors</th>
               </tr>
             </thead>
@@ -109,6 +126,17 @@
         </div>
       </section>
 
+      <section class="watchlist-panel">
+        <div class="section-head">
+          <div>
+            <p class="label">Watchlist</p>
+            <h2>Saved symbols</h2>
+          </div>
+          <button class="secondary-button" id="clearWatchlist" type="button">Clear</button>
+        </div>
+        <div class="watchlist" id="watchlist"></div>
+      </section>
+
       <section class="dashboard" id="dashboard" hidden>
         <section class="bottom-line-section">
           <div class="section-head">
@@ -119,6 +147,7 @@
             <span class="status-pill" id="summarySource">Rules</span>
           </div>
           <p class="bottom-line-text" id="bottomLineText"></p>
+          <p class="missing-notes" id="missingNotes"></p>
           <div class="watch-grid">
             <div>
               <h3>What to watch</h3>
@@ -144,22 +173,22 @@
 
         <section class="vital-grid" aria-label="Vital signs">
           <article>
-            <p class="label">P/E Ratio</p>
+            <p class="label">P/E Ratio <span class="term" data-tip="Price-to-earnings ratio compares the stock price with company earnings. Lower is not always better; compare with similar companies.">?</span></p>
             <strong id="vitalPe">N/A</strong>
             <span>Price compared with company earnings.</span>
           </article>
           <article>
-            <p class="label">Market Cap</p>
+            <p class="label">Market Cap <span class="term" data-tip="Market cap is the total value of all company shares. Larger companies are often more established, but still carry risk.">?</span></p>
             <strong id="vitalMarketCap">N/A</strong>
             <span>Total market value of the company.</span>
           </article>
           <article>
-            <p class="label">Dividend Yield</p>
+            <p class="label">Dividend Yield <span class="term" data-tip="Dividend yield shows annual dividend income as a percentage of price. Very high yields can be risky.">?</span></p>
             <strong id="vitalDividend">N/A</strong>
             <span>Income paid compared with the price.</span>
           </article>
           <article>
-            <p class="label">1-Year Growth</p>
+            <p class="label">1-Year Growth <span class="term" data-tip="One-year growth is price performance over roughly the last year. It is backward-looking, not a forecast.">?</span></p>
             <strong id="vitalGrowth">N/A</strong>
             <span>Price performance over the past year.</span>
           </article>
@@ -194,6 +223,7 @@
               <strong id="price">--</strong>
               <span id="change">--</span>
             </div>
+            <button class="secondary-button add-watch-button" id="addWatchlist" type="button">Save to Watchlist</button>
             <dl class="mini-stats" id="quoteStats"></dl>
           </article>
         </div>
@@ -205,6 +235,11 @@
               <h2 id="chartTitle">Chart</h2>
             </div>
             <span id="asOf"></span>
+          </div>
+          <div class="chart-controls" aria-label="Chart overlays">
+            <label><input type="checkbox" id="showSma50" checked> 50-day SMA</label>
+            <label><input type="checkbox" id="showSma200" checked> 200-day SMA</label>
+            <label><input type="checkbox" id="showRsi" checked> RSI</label>
           </div>
           <canvas id="priceChart" width="1200" height="430"></canvas>
         </section>

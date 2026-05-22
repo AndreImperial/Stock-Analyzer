@@ -22,7 +22,6 @@ const RANGE_DAYS = {
 };
 
 const VALID_INTERVALS = new Set(["1d", "1wk", "1mo"]);
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1";
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const DEFAULT_SCREENER_SYMBOLS = [
@@ -53,6 +52,36 @@ const DEFAULT_SCREENER_SYMBOLS = [
   "^IXIC",
   "^DJI"
 ];
+const SCREENER_PRESETS = {
+  default: {
+    label: "Default universe",
+    symbols: DEFAULT_SCREENER_SYMBOLS
+  },
+  "stable-dividend": {
+    label: "Stable dividend",
+    symbols: ["AAPL", "MSFT", "JPM", "VZ", "KO", "PG", "JNJ", "PEP", "WMT", "SPY", "DIA"]
+  },
+  momentum: {
+    label: "Momentum",
+    symbols: ["AAPL", "MSFT", "NVDA", "AVGO", "AMZN", "META", "QQQ", "SPY", "BTC-USD", "ETH-USD"]
+  },
+  "oversold-watch": {
+    label: "Oversold watch",
+    symbols: ["AAPL", "MSFT", "TSLA", "AMZN", "GOOGL", "META", "JPM", "IWM", "QQQ", "SPY"]
+  },
+  "low-volatility": {
+    label: "Low volatility",
+    symbols: ["SPY", "DIA", "WMT", "PG", "KO", "PEP", "JNJ", "V", "TLT", "GLD"]
+  },
+  "forex-majors": {
+    label: "Forex majors",
+    symbols: ["EURUSD=X", "GBPUSD=X", "JPY=X", "AUDUSD=X", "NZDUSD=X", "CAD=X", "CHF=X", "EURJPY=X"]
+  },
+  pse: {
+    label: "Philippine stocks",
+    symbols: ["JFC.PS", "SM.PS", "ALI.PS", "BDO.PS", "BPI.PS", "TEL.PS", "AC.PS", "ICT.PS", "SMPH.PS", "MER.PS"]
+  }
+};
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -114,6 +143,46 @@ app.get("/api/news", async (req, res) => {
   }
 });
 
+app.get("/api/ai/status", async (req, res) => {
+  const configured = process.env.OLLAMA_ENABLED === "true" || Boolean(process.env.OLLAMA_BASE_URL);
+  if (!configured) {
+    return res.json({
+      provider: "Rules",
+      status: "fallback",
+      label: "Rules fallback",
+      model: null,
+      baseUrl: null
+    });
+  }
+
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL.replace(/\/$/, "")}/api/tags`, {
+      signal: AbortSignal.timeout(2500)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const models = (data.models || []).map((model) => model.name);
+
+    res.json({
+      provider: "Ollama",
+      status: "active",
+      label: "Ollama active",
+      model: OLLAMA_MODEL,
+      baseUrl: redactLocalUrl(OLLAMA_BASE_URL),
+      models
+    });
+  } catch (error) {
+    res.json({
+      provider: "Rules",
+      status: "unavailable",
+      label: "Rules fallback",
+      model: OLLAMA_MODEL,
+      baseUrl: redactLocalUrl(OLLAMA_BASE_URL),
+      details: cleanError(error)
+    });
+  }
+});
+
 app.get("/api/analyze", async (req, res) => {
   const symbol = String(req.query.symbol || "").trim().toUpperCase();
   const range = String(req.query.range || "1y");
@@ -149,7 +218,8 @@ app.get("/api/screener", async (req, res) => {
   const interval = String(req.query.interval || "1d");
   const minimumScore = Number(req.query.minScore ?? -99);
   const ratingFilter = String(req.query.rating || "All");
-  const symbols = parseScreenerSymbols(req.query.symbols);
+  const preset = String(req.query.preset || "default");
+  const symbols = parseScreenerSymbols(req.query.symbols, preset);
 
   if (!RANGE_DAYS[range]) {
     return res.status(400).json({ error: "Unsupported range." });
@@ -184,6 +254,9 @@ app.get("/api/screener", async (req, res) => {
         totalScore: item.analysis.totalScore,
         fundamentalScore: item.analysis.fundamentalScore,
         technicalScore: item.analysis.technicalScore,
+        dividendYield: item.fundamentals.dividendYield,
+        volatility: item.risk.volatility.value,
+        volatilityLevel: item.risk.volatility.level,
         oneMonth: item.performance.oneMonth,
         threeMonth: item.performance.threeMonth,
         ytd: item.performance.ytd,
@@ -197,10 +270,13 @@ app.get("/api/screener", async (req, res) => {
       }))
       .filter((row) => row.totalScore >= minimumScore)
       .filter((row) => ratingFilter === "All" || row.rating === ratingFilter)
-      .sort((a, b) => b.totalScore - a.totalScore);
+      .filter((row) => rowMatchesPreset(row, preset))
+      .sort((a, b) => comparePresetRows(a, b, preset));
 
     res.json({
       asOf: new Date().toISOString(),
+      preset,
+      presetLabel: SCREENER_PRESETS[preset]?.label || "Custom",
       scanned: symbols.length,
       matched: rows.length,
       rows,
@@ -441,6 +517,7 @@ function buildPerformance(history) {
     oneWeek: pctChangeFromOffset(history, 5, close),
     oneMonth: pctChangeFromOffset(history, 21, close),
     threeMonth: pctChangeFromOffset(history, 63, close),
+    oneYear: pctChangeFromOffset(history, 252, close),
     ytd: pctChangeFromStartOfYear(history, close)
   };
 }
@@ -626,17 +703,6 @@ async function buildBottomLine(context) {
     }
   }
 
-  if (process.env.OPENAI_API_KEY) {
-    const openAiText = await generateOpenAiBottomLine(context).catch(() => "");
-    if (openAiText) {
-      return {
-        ...fallback,
-        source: "OpenAI",
-        summary: openAiText
-      };
-    }
-  }
-
   return fallback;
 }
 
@@ -690,35 +756,6 @@ async function generateOllamaBottomLine(context) {
   }
 }
 
-async function generateOpenAiBottomLine(context) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        store: false,
-        instructions: "Write a beginner-friendly market summary. Be clear, calm, and educational. Do not give buy, sell, hold, price target, or personalized financial advice. Mention uncertainty and missing data when relevant.",
-        input: buildAiPrompt(context),
-        text: { verbosity: "low" }
-      })
-    });
-
-    if (!response.ok) throw new Error(`OpenAI request failed with HTTP ${response.status}`);
-    const data = await response.json();
-    return extractResponseText(data);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 function buildBottomLineFallback({ symbol, quote, fundamentals, technicals, performance, analysis, risk }) {
   const name = quote.name || symbol;
   const type = quote.type || "asset";
@@ -738,8 +775,23 @@ function buildBottomLineFallback({ symbol, quote, fundamentals, technicals, perf
     headline: `${name} is currently ${analysis.rating}`,
     summary: `${symbol} is a ${type} with a ${rating} educational score. It is ${oneMonth} and is ${trend}. ${fundamentalsText} Volatility risk is ${risk.volatility.level.toLowerCase()}, while debt risk is ${risk.debt.level.toLowerCase()}. This is a research summary, not a buy or sell recommendation.`,
     watch: buildWatchItems(fundamentals, technicals, performance, risk),
+    missingData: buildMissingDataNotes(fundamentals, technicals, performance),
     confidence: buildConfidence(fundamentals, technicals)
   };
+}
+
+function buildMissingDataNotes(fundamentals, technicals, performance) {
+  const notes = [];
+  if (!hasFundamentalData(fundamentals)) {
+    notes.push("Fundamentals are limited for this symbol, which is normal for forex, crypto, indexes, and some PSE listings.");
+  }
+  if (!isFiniteNumber(technicals.sma200)) {
+    notes.push("The 200-day trend needs more daily history before it becomes reliable.");
+  }
+  if (!isFiniteNumber(performance.oneYear)) {
+    notes.push("One-year performance is unavailable for the selected range.");
+  }
+  return notes;
 }
 
 function buildWatchItems(fundamentals, technicals, performance, risk) {
@@ -761,16 +813,6 @@ function buildConfidence(fundamentals, technicals) {
   if (isFiniteNumber(technicals.sma200)) points += 1;
   if (isFiniteNumber(technicals.rsi14)) points += 1;
   return points >= 3 ? "High" : points >= 2 ? "Medium" : "Low";
-}
-
-function extractResponseText(data) {
-  if (typeof data.output_text === "string") return data.output_text;
-  return (data.output || [])
-    .flatMap((item) => item.content || [])
-    .map((content) => content.text || "")
-    .filter(Boolean)
-    .join("\n")
-    .trim();
 }
 
 function buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, history, fundamentals, quote) {
@@ -872,16 +914,53 @@ function cleanError(error) {
   return error?.message || "Unknown error";
 }
 
-function parseScreenerSymbols(value) {
+function redactLocalUrl(value) {
+  if (!value) return null;
+  return String(value).replace(/\/\/([^:@/]+):([^@/]+)@/, "//***:***@");
+}
+
+function parseScreenerSymbols(value, preset = "default") {
   const raw = String(value || "").trim();
   const symbols = raw
     ? raw.split(/[\s,;]+/)
-    : DEFAULT_SCREENER_SYMBOLS;
+    : (SCREENER_PRESETS[preset]?.symbols || DEFAULT_SCREENER_SYMBOLS);
 
   return [...new Set(symbols
     .map((symbol) => symbol.trim().toUpperCase())
     .filter(Boolean))]
     .slice(0, 40);
+}
+
+function rowMatchesPreset(row, preset) {
+  if (preset === "stable-dividend") {
+    return isFiniteNumber(row.dividendYield) && row.dividendYield > 0 && row.volatilityLevel !== "High";
+  }
+  if (preset === "momentum") {
+    return row.rating === "Bullish" || row.aboveSma50 === true || (isFiniteNumber(row.oneMonth) && row.oneMonth > 3);
+  }
+  if (preset === "oversold-watch") {
+    return isFiniteNumber(row.rsi14) ? row.rsi14 <= 45 : true;
+  }
+  if (preset === "low-volatility") {
+    return row.volatilityLevel === "Low" || row.volatilityLevel === "Unknown";
+  }
+  return true;
+}
+
+function comparePresetRows(a, b, preset) {
+  if (preset === "stable-dividend") {
+    return (b.dividendYield || 0) - (a.dividendYield || 0);
+  }
+  if (preset === "oversold-watch") {
+    return (a.rsi14 || 999) - (b.rsi14 || 999);
+  }
+  if (preset === "low-volatility") {
+    return (a.volatility ?? 999) - (b.volatility ?? 999);
+  }
+  if (preset === "forex-majors") {
+    return (b.oneMonth || -999) - (a.oneMonth || -999);
+  }
+  return b.totalScore - a.totalScore;
 }
 
 async function mapWithConcurrency(items, limit, worker) {

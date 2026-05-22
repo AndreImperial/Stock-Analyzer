@@ -7,6 +7,7 @@ const notice = document.querySelector("#notice");
 const searchResults = document.querySelector("#searchResults");
 const analyzeButton = document.querySelector(".primary-button");
 const runScreenerButton = document.querySelector("#runScreener");
+const screenerPreset = document.querySelector("#screenerPreset");
 const screenerSymbols = document.querySelector("#screenerSymbols");
 const screenerRating = document.querySelector("#screenerRating");
 const screenerMinScore = document.querySelector("#screenerMinScore");
@@ -15,10 +16,34 @@ const screenerRows = document.querySelector("#screenerRows");
 const refreshNewsButton = document.querySelector("#refreshNews");
 const newsList = document.querySelector("#newsList");
 const newsTitle = document.querySelector("#newsTitle");
+const aiStatus = document.querySelector("#aiStatus");
+const addWatchlistButton = document.querySelector("#addWatchlist");
+const clearWatchlistButton = document.querySelector("#clearWatchlist");
+const watchlist = document.querySelector("#watchlist");
 const chart = document.querySelector("#priceChart");
 const ctx = chart.getContext("2d");
+const showSma50 = document.querySelector("#showSma50");
+const showSma200 = document.querySelector("#showSma200");
+const showRsi = document.querySelector("#showRsi");
+const JARGON = {
+  "Trailing PE": "P/E ratio based on the last 12 months of earnings.",
+  "Forward PE": "P/E ratio based on expected future earnings.",
+  "Market cap": "Total market value of the company.",
+  "Dividend yield": "Annual dividends as a percentage of price.",
+  "Debt/equity": "Debt compared with shareholder equity. Higher can mean more balance-sheet risk.",
+  "SMA 20": "Simple moving average over the last 20 periods.",
+  "SMA 50": "Simple moving average over the last 50 periods. Often used for medium-term trend.",
+  "SMA 200": "Simple moving average over the last 200 periods. Often used for long-term trend.",
+  "RSI 14": "Relative Strength Index. Above 70 can be stretched; below 30 can be oversold.",
+  "ATR 14": "Average True Range. A volatility gauge showing typical recent price movement.",
+  "YTD": "Year to date. Performance since the start of the current year.",
+  "Beta": "How much a stock tends to move compared with the market."
+};
 
 let searchTimer = null;
+let lastAnalysis = null;
+let screenerData = [];
+let sortState = { key: "totalScore", direction: "desc" };
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -31,6 +56,30 @@ runScreenerButton.addEventListener("click", () => {
 
 refreshNewsButton.addEventListener("click", () => {
   loadNews(symbolInput.value);
+});
+
+addWatchlistButton.addEventListener("click", () => {
+  if (lastAnalysis) saveWatchSymbol(lastAnalysis.symbol);
+});
+
+clearWatchlistButton.addEventListener("click", () => {
+  localStorage.removeItem("stockAnalyzerWatchlist");
+  renderWatchlist();
+});
+
+screenerPreset.addEventListener("change", () => {
+  if (!screenerSymbols.value.trim()) runScreener();
+});
+
+document.querySelectorAll("[data-sort]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const key = button.dataset.sort;
+    sortState = {
+      key,
+      direction: sortState.key === key && sortState.direction === "desc" ? "asc" : "desc"
+    };
+    renderScreenerRows();
+  });
 });
 
 document.querySelectorAll("[data-symbol]").forEach((button) => {
@@ -60,8 +109,17 @@ window.addEventListener("resize", () => {
   if (data.length) drawChart(data);
 });
 
+[showSma50, showSma200, showRsi].forEach((control) => {
+  control.addEventListener("change", () => {
+    const data = chart.dataset.history ? JSON.parse(chart.dataset.history) : [];
+    if (data.length) drawChart(data);
+  });
+});
+
 analyze(symbolInput.value);
 runScreener();
+loadAiStatus();
+renderWatchlist();
 
 async function searchSymbols(q) {
   try {
@@ -174,7 +232,8 @@ async function runScreener() {
     range: rangeSelect.value,
     interval: intervalSelect.value,
     rating: screenerRating.value,
-    minScore: screenerMinScore.value || "-99"
+    minScore: screenerMinScore.value || "-99",
+    preset: screenerPreset.value
   });
 
   const customSymbols = screenerSymbols.value.trim();
@@ -196,14 +255,22 @@ async function runScreener() {
 }
 
 function renderScreener(data) {
-  screenerMeta.textContent = `Scanned ${data.scanned} symbols. Matched ${data.matched}. Updated ${new Date(data.asOf).toLocaleString()}.`;
+  screenerData = data.rows || [];
+  screenerMeta.textContent = `${data.presetLabel || "Screener"}: scanned ${data.scanned}, matched ${data.matched}. Updated ${new Date(data.asOf).toLocaleString()}.`;
 
-  if (!data.rows?.length) {
+  if (!screenerData.length) {
     screenerRows.innerHTML = `<tr><td colspan="9">No symbols matched these filters.</td></tr>`;
     return;
   }
 
-  screenerRows.innerHTML = data.rows.map((row) => `
+  renderScreenerRows();
+}
+
+function renderScreenerRows() {
+  if (!screenerData.length) return;
+  const rows = [...screenerData].sort(compareRows);
+
+  screenerRows.innerHTML = rows.map((row) => `
     <tr>
       <td>
         <button class="symbol-link" type="button" data-screen-symbol="${escapeHtml(row.symbol)}">
@@ -217,7 +284,7 @@ function renderScreener(data) {
       <td class="${numberClass(row.oneMonth)}">${formatPercent(row.oneMonth)}</td>
       <td class="${numberClass(row.threeMonth)}">${formatPercent(row.threeMonth)}</td>
       <td>${formatNumber(row.rsi14)}</td>
-      <td>${formatTrend(row)}</td>
+      <td>${formatRiskLabel(row.volatilityLevel, row.volatility)}</td>
       <td>${escapeHtml((row.factors || []).join(" "))}</td>
     </tr>
   `).join("");
@@ -232,6 +299,7 @@ function renderScreener(data) {
 }
 
 function renderDashboard(data) {
+  lastAnalysis = data;
   dashboard.hidden = false;
   if (data.warnings?.length) {
     showNotice(data.warnings.join(" "));
@@ -306,13 +374,26 @@ function renderDashboard(data) {
   drawChart(data.history || []);
 }
 
+async function loadAiStatus() {
+  try {
+    const response = await fetch("/api/ai/status");
+    const payload = await response.json();
+    aiStatus.textContent = payload.label || "Rules fallback";
+    aiStatus.className = `status-pill ai-${payload.status || "fallback"}`;
+  } catch {
+    aiStatus.textContent = "Rules fallback";
+    aiStatus.className = "status-pill ai-fallback";
+  }
+}
+
 function renderBottomLine(data) {
   const bottomLine = data.bottomLine || {};
   const risk = data.risk || {};
 
   document.querySelector("#bottomLineHeadline").textContent = bottomLine.headline || `${data.symbol} summary`;
   document.querySelector("#bottomLineText").textContent = bottomLine.summary || data.analysis.caveat;
-  document.querySelector("#summarySource").textContent = bottomLine.source === "OpenAI" || bottomLine.source === "Ollama"
+  document.querySelector("#missingNotes").textContent = (bottomLine.missingData || []).join(" ");
+  document.querySelector("#summarySource").textContent = bottomLine.source === "Ollama"
     ? `${bottomLine.source} summary`
     : "Rules summary";
   document.querySelector("#watchItems").innerHTML = (bottomLine.watch || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
@@ -325,7 +406,7 @@ function renderVitalSigns(data) {
   document.querySelector("#vitalPe").textContent = formatNumber(data.fundamentals.trailingPE || data.fundamentals.forwardPE);
   document.querySelector("#vitalMarketCap").textContent = formatCompact(data.fundamentals.marketCap);
   document.querySelector("#vitalDividend").textContent = formatPercentRatio(data.fundamentals.dividendYield);
-  document.querySelector("#vitalGrowth").textContent = formatPercent(data.performance.ytd ?? data.performance.threeMonth ?? data.performance.oneMonth);
+  document.querySelector("#vitalGrowth").textContent = formatPercent(data.performance.oneYear ?? data.performance.ytd ?? data.performance.threeMonth ?? data.performance.oneMonth);
 }
 
 function renderRiskMeter(kind, risk) {
@@ -338,13 +419,67 @@ function renderRiskMeter(kind, risk) {
   document.querySelector(`#${kind}Meter`).className = className;
 }
 
+function getWatchlist() {
+  try {
+    return JSON.parse(localStorage.getItem("stockAnalyzerWatchlist") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveWatchSymbol(symbol) {
+  const clean = String(symbol || "").trim().toUpperCase();
+  if (!clean) return;
+  const symbols = [clean, ...getWatchlist().filter((item) => item !== clean)].slice(0, 30);
+  localStorage.setItem("stockAnalyzerWatchlist", JSON.stringify(symbols));
+  renderWatchlist();
+}
+
+function removeWatchSymbol(symbol) {
+  const symbols = getWatchlist().filter((item) => item !== symbol);
+  localStorage.setItem("stockAnalyzerWatchlist", JSON.stringify(symbols));
+  renderWatchlist();
+}
+
+function renderWatchlist() {
+  const symbols = getWatchlist();
+  if (!symbols.length) {
+    watchlist.innerHTML = `<p class="empty-state">Save symbols you want to revisit. Stored only in this browser.</p>`;
+    return;
+  }
+
+  watchlist.innerHTML = symbols.map((symbol) => `
+    <span class="watch-chip">
+      <button type="button" data-watch-symbol="${escapeHtml(symbol)}">${escapeHtml(symbol)}</button>
+      <button type="button" aria-label="Remove ${escapeHtml(symbol)}" data-remove-watch="${escapeHtml(symbol)}">x</button>
+    </span>
+  `).join("");
+
+  document.querySelectorAll("[data-watch-symbol]").forEach((button) => {
+    button.addEventListener("click", () => {
+      symbolInput.value = button.dataset.watchSymbol;
+      analyze(button.dataset.watchSymbol);
+    });
+  });
+
+  document.querySelectorAll("[data-remove-watch]").forEach((button) => {
+    button.addEventListener("click", () => removeWatchSymbol(button.dataset.removeWatch));
+  });
+}
+
 function renderDefinitionList(selector, rows) {
   document.querySelector(selector).innerHTML = rows.map(([label, value]) => `
     <div>
-      <dt>${escapeHtml(label)}</dt>
+      <dt>${labelWithTooltip(label)}</dt>
       <dd>${escapeHtml(value ?? "N/A")}</dd>
     </div>
   `).join("");
+}
+
+function labelWithTooltip(label) {
+  const tip = JARGON[label];
+  if (!tip) return escapeHtml(label);
+  return `${escapeHtml(label)} <span class="term" tabindex="0" data-tip="${escapeHtml(tip)}">?</span>`;
 }
 
 function renderFactors(selector, items) {
@@ -371,11 +506,29 @@ function drawChart(history) {
 
   const padding = { top: 18, right: 18, bottom: 34, left: 58 };
   const closes = history.map((point) => point.close).filter((value) => Number.isFinite(value));
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
+  if (!closes.length) {
+    ctx.fillStyle = "#677281";
+    ctx.font = "16px system-ui";
+    ctx.fillText("No usable close prices available", 24, 42);
+    return;
+  }
+  const sma50 = movingAverageSeries(history, 50);
+  const sma200 = movingAverageSeries(history, 200);
+  const rsi14 = rsiSeries(history, 14);
+  const visibleValues = [
+    ...closes,
+    ...(showSma50.checked ? sma50.filter(Number.isFinite) : []),
+    ...(showSma200.checked ? sma200.filter(Number.isFinite) : [])
+  ];
+  const min = Math.min(...visibleValues);
+  const max = Math.max(...visibleValues);
   const span = max - min || Math.max(1, max * 0.02);
   const plotW = width - padding.left - padding.right;
-  const plotH = height - padding.top - padding.bottom;
+  const fullPlotH = height - padding.top - padding.bottom;
+  const rsiEnabled = showRsi.checked;
+  const rsiGap = rsiEnabled ? 24 : 0;
+  const rsiH = rsiEnabled ? Math.max(82, fullPlotH * 0.24) : 0;
+  const plotH = fullPlotH - rsiH - rsiGap;
 
   ctx.strokeStyle = "#dce1e7";
   ctx.lineWidth = 1;
@@ -396,31 +549,114 @@ function drawChart(history) {
     ctx.fillText(formatNumber(value), padding.left - 8, y);
   }
 
-  ctx.beginPath();
-  history.forEach((point, index) => {
-    const x = padding.left + (plotW * index) / Math.max(1, history.length - 1);
-    const y = padding.top + plotH - ((point.close - min) / span) * plotH;
-    if (index === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.strokeStyle = "#0f766e";
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
-
-  const gradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
+  const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + plotH);
   gradient.addColorStop(0, "rgba(15, 118, 110, 0.18)");
   gradient.addColorStop(1, "rgba(15, 118, 110, 0)");
-  ctx.lineTo(width - padding.right, height - padding.bottom);
-  ctx.lineTo(padding.left, height - padding.bottom);
-  ctx.closePath();
-  ctx.fillStyle = gradient;
-  ctx.fill();
+  fillArea(history.map((point) => point.close), gradient, (value) => padding.top + plotH - ((value - min) / span) * plotH);
+  drawLine(history.map((point) => point.close), "#0f766e", 2.5, (value) => padding.top + plotH - ((value - min) / span) * plotH);
+
+  if (showSma50.checked) {
+    drawLine(sma50, "#a15c07", 1.8, (value) => padding.top + plotH - ((value - min) / span) * plotH);
+  }
+
+  if (showSma200.checked) {
+    drawLine(sma200, "#4f46e5", 1.8, (value) => padding.top + plotH - ((value - min) / span) * plotH);
+  }
+
+  if (rsiEnabled) {
+    const rsiTop = padding.top + plotH + rsiGap;
+    ctx.strokeStyle = "#dce1e7";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    [30, 70].forEach((level) => {
+      const y = rsiTop + rsiH - (level / 100) * rsiH;
+      ctx.moveTo(padding.left, y);
+      ctx.lineTo(width - padding.right, y);
+    });
+    ctx.stroke();
+    drawLine(rsi14, "#7c3aed", 1.7, (value) => rsiTop + rsiH - (value / 100) * rsiH);
+    ctx.fillStyle = "#677281";
+    ctx.textAlign = "left";
+    ctx.fillText("RSI", padding.left, rsiTop + 12);
+  }
 
   ctx.fillStyle = "#677281";
   ctx.textAlign = "left";
+  ctx.fillText("Close", padding.left, 14);
+  if (showSma50.checked) ctx.fillText("50 SMA", padding.left + 54, 14);
+  if (showSma200.checked) ctx.fillText("200 SMA", padding.left + 112, 14);
   ctx.fillText(history[0].date, padding.left, height - 12);
   ctx.textAlign = "right";
   ctx.fillText(history[history.length - 1].date, width - padding.right, height - 12);
+
+  function drawLine(values, color, lineWidth, mapY) {
+    ctx.beginPath();
+    let started = false;
+    values.forEach((value, index) => {
+      if (!Number.isFinite(value)) return;
+      const x = padding.left + (plotW * index) / Math.max(1, history.length - 1);
+      const y = mapY(value);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  }
+
+  function fillArea(values, fillStyle, mapY) {
+    ctx.beginPath();
+    let firstX = null;
+    let lastX = null;
+    values.forEach((value, index) => {
+      if (!Number.isFinite(value)) return;
+      const x = padding.left + (plotW * index) / Math.max(1, history.length - 1);
+      const y = mapY(value);
+      if (firstX === null) {
+        firstX = x;
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+      lastX = x;
+    });
+    if (firstX === null || lastX === null) return;
+    ctx.lineTo(lastX, padding.top + plotH);
+    ctx.lineTo(firstX, padding.top + plotH);
+    ctx.closePath();
+    ctx.fillStyle = fillStyle;
+    ctx.fill();
+  }
+}
+
+function movingAverageSeries(history, period) {
+  return history.map((_, index) => {
+    if (index + 1 < period) return null;
+    const slice = history.slice(index + 1 - period, index + 1).map((point) => point.close);
+    if (slice.some((value) => !Number.isFinite(value))) return null;
+    return slice.reduce((sum, value) => sum + value, 0) / period;
+  });
+}
+
+function rsiSeries(history, period) {
+  const closes = history.map((point) => point.close);
+  return closes.map((_, index) => {
+    if (index < period) return null;
+    let gains = 0;
+    let losses = 0;
+    for (let i = index - period + 1; i <= index; i += 1) {
+      const change = closes[i] - closes[i - 1];
+      if (change >= 0) gains += change;
+      else losses += Math.abs(change);
+    }
+    if (losses === 0) return 100;
+    const rs = gains / losses;
+    return 100 - (100 / (1 + rs));
+  });
 }
 
 function setLoading(isLoading) {
@@ -502,6 +738,22 @@ function ratingClass(rating) {
   if (rating === "Bullish") return "rating-bullish";
   if (rating === "Bearish") return "rating-bearish";
   return "rating-neutral";
+}
+
+function compareRows(a, b) {
+  const direction = sortState.direction === "asc" ? 1 : -1;
+  const aValue = a[sortState.key];
+  const bValue = b[sortState.key];
+  if (typeof aValue === "string" || typeof bValue === "string") {
+    return direction * String(aValue || "").localeCompare(String(bValue || ""));
+  }
+  return direction * ((aValue ?? -999999) - (bValue ?? -999999));
+}
+
+function formatRiskLabel(level, value) {
+  const riskLevel = level || "Unknown";
+  const suffix = Number.isFinite(value) ? ` (${formatNumber(value)}%)` : "";
+  return `${riskLevel}${suffix}`;
 }
 
 function formatTrend(row) {

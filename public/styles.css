@@ -94,8 +94,29 @@ h3 {
   font-weight: 700;
 }
 
+.top-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ai-active {
+  border-color: rgba(18, 128, 92, 0.35);
+  background: rgba(18, 128, 92, 0.1);
+  color: var(--good);
+}
+
+.ai-fallback,
+.ai-unavailable {
+  border-color: rgba(161, 92, 7, 0.35);
+  background: rgba(161, 92, 7, 0.1);
+  color: var(--warn);
+}
+
 .search-panel,
 .screener-panel,
+.watchlist-panel,
 .chart-section,
 .news-section,
 article,
@@ -113,6 +134,11 @@ article,
 
 .screener-panel {
   padding: 18px;
+  margin-bottom: 18px;
+}
+
+.watchlist-panel {
+  padding: 16px;
   margin-bottom: 18px;
 }
 
@@ -187,6 +213,10 @@ textarea:focus {
   background: #fbfcfd;
   color: var(--accent-strong);
   padding: 0 12px;
+}
+
+.add-watch-button {
+  margin-top: 14px;
 }
 
 .compact-button {
@@ -275,6 +305,14 @@ textarea:focus {
   line-height: 1.65;
 }
 
+.missing-notes {
+  margin: -8px 0 18px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
 .watch-grid,
 .vital-grid {
   display: grid;
@@ -300,6 +338,43 @@ textarea:focus {
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 650;
+}
+
+.term {
+  position: relative;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(8, 127, 140, 0.1);
+  color: var(--accent-strong);
+  cursor: help;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: none;
+}
+
+.term:hover::after,
+.term:focus::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 20;
+  top: 24px;
+  left: 50%;
+  width: min(260px, 80vw);
+  transform: translateX(-50%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.4;
+  padding: 10px;
+  text-align: left;
 }
 
 .risk-meter + .risk-meter {
@@ -356,7 +431,7 @@ textarea:focus {
 
 .screener-controls {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) 150px 150px;
+  grid-template-columns: 180px minmax(280px, 1fr) 150px 150px;
   gap: 12px;
   margin-top: 16px;
   align-items: end;
@@ -395,6 +470,22 @@ textarea:focus {
   font-size: 0.76rem;
   font-weight: 850;
   text-transform: uppercase;
+}
+
+.sort-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: inherit;
+  padding: 0;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.sort-button:hover {
+  color: var(--accent-strong);
 }
 
 .screener-table td {
@@ -438,6 +529,35 @@ textarea:focus {
 
 .rating-neutral {
   background: rgba(103, 114, 129, 0.14);
+  color: var(--muted);
+}
+
+.watchlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.watch-chip {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfcfd;
+}
+
+.watch-chip button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 850;
+  padding: 7px 10px;
+}
+
+.watch-chip button + button {
+  border-left: 1px solid var(--line);
   color: var(--muted);
 }
 
@@ -555,6 +675,27 @@ dd {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.chart-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfcfd;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 850;
+  padding: 7px 11px;
 }
 
 .factor-columns {

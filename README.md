@@ -1,6 +1,8 @@
 # Global Market Analyzer
 
-A local web app for educational analysis of Yahoo Finance-compatible symbols across stocks, ETFs, crypto, forex, and indexes.
+A free-only Express web app for educational analysis of Yahoo Finance-compatible symbols across stocks, ETFs, Philippine stocks, crypto, forex, and indexes.
+
+The app is built for beginner investors. It includes vital signs, jargon tooltips, risk meters, chart overlays, latest-news links from public sources, a watchlist stored in the browser, and preset screeners. It never requires paid API keys and never gives buy/sell/hold instructions.
 
 ## Run
 
@@ -22,14 +24,15 @@ http://localhost:3000
 - `BTC-USD` for crypto
 - `EURUSD=X` for forex
 - `^GSPC` for an index
+- `JFC.PS` or `SM.PS` for Philippine stocks when Yahoo-compatible data is available
 
 The app uses free market data, so availability, delay, and field coverage vary by asset type and symbol.
 
-## Optional AI Summaries
+## Free AI Summaries
 
-The app works without AI and falls back to a rules-based beginner summary.
+The app works without AI and falls back to a deterministic rules-based beginner summary. No paid AI provider is part of the main product path.
 
-### Free local Ollama summaries
+### Local or self-hosted Ollama
 
 Install Ollama, pull a model, and start Ollama locally:
 
@@ -47,18 +50,23 @@ $env:OLLAMA_MODEL="llama3.1"
 npm start
 ```
 
-Render cannot reach your laptop's `localhost`. To use Ollama on Render, set `OLLAMA_BASE_URL` to a reachable hosted Ollama server URL.
+Check status:
 
-### OpenAI summaries
-
-To enable OpenAI-powered summaries instead, set:
-
-```powershell
-$env:OPENAI_API_KEY="your_key_here"
-$env:OPENAI_MODEL="gpt-5.5"
+```text
+http://localhost:3000/api/ai/status
 ```
 
-On Render, add the same values in the service environment variables. The app never sends AI provider keys to the browser.
+Render cannot reach your laptop's `localhost`. To use Ollama on Render, set `OLLAMA_BASE_URL` to a reachable user-managed Ollama-compatible endpoint. If Ollama is offline or unavailable, the deployed app stays live and uses rules summaries.
+
+## Screener Presets
+
+- Default universe
+- Stable dividend
+- Momentum
+- Oversold watch
+- Low volatility
+- Forex majors
+- Philippine stocks
 
 ## Deploy on Render
 
