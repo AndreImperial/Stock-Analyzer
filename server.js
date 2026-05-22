@@ -191,11 +191,53 @@ function unwrapSettled(result) {
   return result.status === "fulfilled" ? result.value : null;
 }
 
+function mergeQuoteFallbacks(primaryQuote, nasdaq) {
+  if (!nasdaq) return primaryQuote;
+  return {
+    ...(primaryQuote || {}),
+    symbol: primaryQuote?.symbol || nasdaq.symbol,
+    shortName: primaryQuote?.shortName || nasdaq.companyName,
+    longName: primaryQuote?.longName || nasdaq.companyName,
+    quoteType: primaryQuote?.quoteType || nasdaq.quoteType,
+    fullExchangeName: primaryQuote?.fullExchangeName || nasdaq.exchange,
+    exchange: primaryQuote?.exchange || nasdaq.exchange,
+    regularMarketPrice: firstNumber(primaryQuote?.regularMarketPrice, nasdaq.price),
+    regularMarketChange: firstNumber(primaryQuote?.regularMarketChange, nasdaq.change),
+    regularMarketChangePercent: firstNumber(primaryQuote?.regularMarketChangePercent, nasdaq.changePercent),
+    regularMarketPreviousClose: firstNumber(primaryQuote?.regularMarketPreviousClose, nasdaq.previousClose),
+    regularMarketVolume: firstNumber(primaryQuote?.regularMarketVolume, nasdaq.volume),
+    marketState: primaryQuote?.marketState || nasdaq.marketState,
+    currency: primaryQuote?.currency || nasdaq.currency || ""
+  };
+}
+
+function mergeSummaryFallbacks(primarySummary, nasdaq) {
+  if (!nasdaq) return primarySummary || {};
+  const summary = primarySummary || {};
+  return {
+    ...summary,
+    assetProfile: {
+      ...(summary.assetProfile || {}),
+      sector: summary.assetProfile?.sector || nasdaq.sector || "",
+      industry: summary.assetProfile?.industry || nasdaq.industry || ""
+    },
+    summaryDetail: {
+      ...(summary.summaryDetail || {}),
+      marketCap: firstNumber(summary.summaryDetail?.marketCap, nasdaq.marketCap),
+      dividendYield: firstNumber(summary.summaryDetail?.dividendYield, nasdaq.dividendYield)
+    },
+    price: {
+      ...(summary.price || {}),
+      marketCap: firstNumber(summary.price?.marketCap, nasdaq.marketCap)
+    }
+  };
+}
+
 async function analyzeSymbol(symbol, range, interval, includeHistory) {
   const period2 = new Date();
   const period1 = new Date(period2.getTime() - RANGE_DAYS[range] * 24 * 60 * 60 * 1000);
 
-  const [quoteResult, summaryResult, historyResult] = await Promise.allSettled([
+  const [quoteResult, summaryResult, nasdaqResult, historyResult] = await Promise.allSettled([
     yahooQuote(symbol),
     yahooQuoteSummary(symbol, [
       "assetProfile",
@@ -204,11 +246,12 @@ async function analyzeSymbol(symbol, range, interval, includeHistory) {
       "financialData",
       "price"
     ]),
+    nasdaqSummary(symbol),
     yahooHistorical(symbol, { period1, period2, interval })
   ]);
 
-  const quote = unwrapSettled(quoteResult);
-  const summary = unwrapSettled(summaryResult) || {};
+  const quote = mergeQuoteFallbacks(unwrapSettled(quoteResult), unwrapSettled(nasdaqResult));
+  const summary = mergeSummaryFallbacks(unwrapSettled(summaryResult), unwrapSettled(nasdaqResult));
   const rawHistory = unwrapSettled(historyResult) || [];
 
   const history = rawHistory
@@ -242,7 +285,7 @@ async function analyzeSymbol(symbol, range, interval, includeHistory) {
     performance,
     analysis,
     history: includeHistory ? history : [],
-    warnings: buildWarnings(quoteResult, summaryResult, historyResult, history, fundamentals)
+    warnings: buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, history, fundamentals, quote)
   };
 }
 
@@ -491,14 +534,21 @@ function buildAnalysis(fundamentals, technicals, performance, quote) {
   };
 }
 
-function buildWarnings(quoteResult, summaryResult, historyResult, history, fundamentals) {
+function buildWarnings(quoteResult, summaryResult, nasdaqResult, historyResult, history, fundamentals, quote) {
   const warnings = [];
 
   if (quoteResult.status === "rejected") {
     warnings.push("Live quote data was unavailable.");
   }
-  if (summaryResult.status === "rejected" || !hasFundamentalData(fundamentals)) {
-    warnings.push("Fundamental data is limited or unavailable for this symbol.");
+  if (!hasFundamentalData(fundamentals)) {
+    const type = quote?.quoteType || quote?.type || "";
+    if (type === "CURRENCY" || type === "CRYPTOCURRENCY" || type === "INDEX") {
+      warnings.push("Company fundamentals do not apply to this asset type; technicals and price history are shown.");
+    } else {
+      warnings.push("Deep fundamentals are unavailable from the free data sources for this symbol.");
+    }
+  } else if (summaryResult.status === "rejected" && nasdaqResult.status === "fulfilled") {
+    warnings.push("Showing available vital-sign fundamentals; deeper statement metrics are limited.");
   }
   if (historyResult.status === "rejected" || history.length < 30) {
     warnings.push("Technical analysis is limited because price history is short or unavailable.");
@@ -647,6 +697,35 @@ async function yahooQuoteSummary(symbol, modules) {
   return data.quoteSummary?.result?.[0] || null;
 }
 
+async function nasdaqSummary(symbol) {
+  if (!/^[A-Z]+$/.test(symbol)) return null;
+
+  const data = await jsonGet(`https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/summary`, {
+    assetclass: "stocks"
+  });
+  const summary = data.data?.summaryData || {};
+  const primary = data.data?.primaryData || {};
+
+  return {
+    symbol: data.data?.symbol || symbol,
+    companyName: data.data?.companyName || "",
+    quoteType: data.data?.assetClass === "STOCKS" ? "EQUITY" : data.data?.assetClass || "",
+    exchange: summary.Exchange?.value || data.data?.exchange || "",
+    sector: summary.Sector?.value || "",
+    industry: summary.Industry?.value || "",
+    marketCap: parseNumberText(summary.MarketCap?.value),
+    dividendYield: parsePercentText(summary.Yield?.value),
+    annualDividend: parseNumberText(summary.AnnualizedDividend?.value),
+    previousClose: parseNumberText(summary.PreviousClose?.value),
+    volume: parseNumberText(summary.ShareVolume?.value || primary.volume),
+    price: parseNumberText(primary.lastSalePrice),
+    change: parseNumberText(primary.netChange),
+    changePercent: parsePercentText(primary.percentageChange),
+    marketState: data.data?.marketStatus || "",
+    currency: primary.currency || ""
+  };
+}
+
 async function yahooHistorical(symbol, options) {
   const data = await yahooGet(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`, {
     period1: Math.floor(options.period1.getTime() / 1000),
@@ -672,6 +751,18 @@ async function yahooHistorical(symbol, options) {
 }
 
 async function yahooGet(baseUrl, params) {
+  const data = await jsonGet(baseUrl, params);
+  const chartError = data.chart?.error;
+  const financeError = data.finance?.error;
+  const summaryError = data.quoteSummary?.error;
+  const error = chartError || financeError || summaryError;
+  if (error) {
+    throw new Error(error.description || error.message || "Yahoo request failed");
+  }
+  return data;
+}
+
+async function jsonGet(baseUrl, params) {
   const url = new URL(baseUrl);
   Object.entries(params).forEach(([key, value]) => {
     if (value !== null && value !== undefined) {
@@ -687,16 +778,21 @@ async function yahooGet(baseUrl, params) {
   });
 
   if (!response.ok) {
-    throw new Error(`Yahoo request failed with HTTP ${response.status}`);
+    throw new Error(`Request failed with HTTP ${response.status}`);
   }
 
-  const data = await response.json();
-  const chartError = data.chart?.error;
-  const financeError = data.finance?.error;
-  const summaryError = data.quoteSummary?.error;
-  const error = chartError || financeError || summaryError;
-  if (error) {
-    throw new Error(error.description || error.message || "Yahoo request failed");
-  }
-  return data;
+  return response.json();
+}
+
+function parseNumberText(value) {
+  if (typeof value === "number") return toNumber(value);
+  if (!value || value === "N/A" || value === "NA") return null;
+  const cleaned = String(value).replace(/[$,%\s,]/g, "");
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? round(number) : null;
+}
+
+function parsePercentText(value) {
+  const number = parseNumberText(value);
+  return isFiniteNumber(number) ? round(number / 100) : null;
 }
