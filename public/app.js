@@ -6,6 +6,12 @@ const dashboard = document.querySelector("#dashboard");
 const notice = document.querySelector("#notice");
 const searchResults = document.querySelector("#searchResults");
 const analyzeButton = document.querySelector(".primary-button");
+const runScreenerButton = document.querySelector("#runScreener");
+const screenerSymbols = document.querySelector("#screenerSymbols");
+const screenerRating = document.querySelector("#screenerRating");
+const screenerMinScore = document.querySelector("#screenerMinScore");
+const screenerMeta = document.querySelector("#screenerMeta");
+const screenerRows = document.querySelector("#screenerRows");
 const chart = document.querySelector("#priceChart");
 const ctx = chart.getContext("2d");
 
@@ -14,6 +20,10 @@ let searchTimer = null;
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   analyze(symbolInput.value);
+});
+
+runScreenerButton.addEventListener("click", () => {
+  runScreener();
 });
 
 document.querySelectorAll("[data-symbol]").forEach((button) => {
@@ -44,6 +54,7 @@ window.addEventListener("resize", () => {
 });
 
 analyze(symbolInput.value);
+runScreener();
 
 async function searchSymbols(q) {
   try {
@@ -108,6 +119,71 @@ async function analyze(symbol) {
   } finally {
     setLoading(false);
   }
+}
+
+async function runScreener() {
+  setScreenerLoading(true);
+  screenerMeta.textContent = "Scanning symbols...";
+
+  const params = new URLSearchParams({
+    range: rangeSelect.value,
+    interval: intervalSelect.value,
+    rating: screenerRating.value,
+    minScore: screenerMinScore.value || "-99"
+  });
+
+  const customSymbols = screenerSymbols.value.trim();
+  if (customSymbols) {
+    params.set("symbols", customSymbols);
+  }
+
+  try {
+    const response = await fetch(`/api/screener?${params.toString()}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Screener failed");
+    renderScreener(payload);
+  } catch (error) {
+    screenerMeta.textContent = error.message || "Unable to run the screener.";
+    screenerRows.innerHTML = `<tr><td colspan="9">No screener results available.</td></tr>`;
+  } finally {
+    setScreenerLoading(false);
+  }
+}
+
+function renderScreener(data) {
+  screenerMeta.textContent = `Scanned ${data.scanned} symbols. Matched ${data.matched}. Updated ${new Date(data.asOf).toLocaleString()}.`;
+
+  if (!data.rows?.length) {
+    screenerRows.innerHTML = `<tr><td colspan="9">No symbols matched these filters.</td></tr>`;
+    return;
+  }
+
+  screenerRows.innerHTML = data.rows.map((row) => `
+    <tr>
+      <td>
+        <button class="symbol-link" type="button" data-screen-symbol="${escapeHtml(row.symbol)}">
+          ${escapeHtml(row.symbol)}
+        </button>
+        <span>${escapeHtml(row.name || row.type || "")}</span>
+      </td>
+      <td><span class="rating-badge ${ratingClass(row.rating)}">${escapeHtml(row.rating)}</span></td>
+      <td>${formatNumber(row.totalScore)}</td>
+      <td>${formatMoney(row.price, "")}</td>
+      <td class="${numberClass(row.oneMonth)}">${formatPercent(row.oneMonth)}</td>
+      <td class="${numberClass(row.threeMonth)}">${formatPercent(row.threeMonth)}</td>
+      <td>${formatNumber(row.rsi14)}</td>
+      <td>${formatTrend(row)}</td>
+      <td>${escapeHtml((row.factors || []).join(" "))}</td>
+    </tr>
+  `).join("");
+
+  document.querySelectorAll("[data-screen-symbol]").forEach((button) => {
+    button.addEventListener("click", () => {
+      symbolInput.value = button.dataset.screenSymbol;
+      analyze(button.dataset.screenSymbol);
+      document.querySelector("#dashboard").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
 }
 
 function renderDashboard(data) {
@@ -273,6 +349,11 @@ function setLoading(isLoading) {
   analyzeButton.textContent = isLoading ? "Analyzing" : "Analyze";
 }
 
+function setScreenerLoading(isLoading) {
+  runScreenerButton.disabled = isLoading;
+  runScreenerButton.textContent = isLoading ? "Scanning" : "Run Screener";
+}
+
 function showNotice(message) {
   notice.textContent = message;
   notice.hidden = false;
@@ -327,6 +408,25 @@ function formatPercentRatio(value) {
 function formatSigned(value) {
   if (!Number.isFinite(value)) return "N/A";
   return `${value > 0 ? "+" : ""}${formatNumber(value)}`;
+}
+
+function numberClass(value) {
+  return value > 0 ? "positive" : value < 0 ? "negative" : "";
+}
+
+function ratingClass(rating) {
+  if (rating === "Bullish") return "rating-bullish";
+  if (rating === "Bearish") return "rating-bearish";
+  return "rating-neutral";
+}
+
+function formatTrend(row) {
+  const parts = [];
+  if (row.aboveSma50 === true) parts.push(">50");
+  if (row.aboveSma50 === false) parts.push("<50");
+  if (row.aboveSma200 === true) parts.push(">200");
+  if (row.aboveSma200 === false) parts.push("<200");
+  return parts.length ? parts.join(" ") : "N/A";
 }
 
 function escapeHtml(value) {

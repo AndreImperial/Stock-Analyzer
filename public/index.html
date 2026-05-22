@@ -55,6 +55,60 @@
 
       <section class="notice" id="notice" hidden></section>
 
+      <section class="screener-panel">
+        <div class="section-head">
+          <div>
+            <p class="label">Market screener</p>
+            <h2>Scan and rank a symbol universe</h2>
+          </div>
+          <button class="primary-button compact-button" id="runScreener" type="button">Run Screener</button>
+        </div>
+
+        <div class="screener-controls">
+          <div class="field">
+            <label for="screenerSymbols">Symbols</label>
+            <textarea id="screenerSymbols" rows="3" placeholder="Leave blank for default universe, or enter: AAPL, MSFT, SPY, BTC-USD, EURUSD=X"></textarea>
+          </div>
+          <div class="field">
+            <label for="screenerRating">Rating</label>
+            <select id="screenerRating">
+              <option value="All" selected>All</option>
+              <option value="Bullish">Bullish</option>
+              <option value="Neutral">Neutral</option>
+              <option value="Bearish">Bearish</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="screenerMinScore">Minimum score</label>
+            <input id="screenerMinScore" type="number" step="0.25" value="-99">
+          </div>
+        </div>
+
+        <div class="screener-meta" id="screenerMeta">Default universe includes mega-cap stocks, ETFs, crypto, forex, and indexes.</div>
+        <div class="table-wrap">
+          <table class="screener-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Rating</th>
+                <th>Score</th>
+                <th>Price</th>
+                <th>1M</th>
+                <th>3M</th>
+                <th>RSI</th>
+                <th>Trend</th>
+                <th>Factors</th>
+              </tr>
+            </thead>
+            <tbody id="screenerRows">
+              <tr>
+                <td colspan="9">Run the screener to rank the default market list.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="dashboard" id="dashboard" hidden>
         <div class="summary-grid">
           <article class="score-card">

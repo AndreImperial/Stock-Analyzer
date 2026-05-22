@@ -22,6 +22,34 @@ const RANGE_DAYS = {
 };
 
 const VALID_INTERVALS = new Set(["1d", "1wk", "1mo"]);
+const DEFAULT_SCREENER_SYMBOLS = [
+  "AAPL",
+  "MSFT",
+  "NVDA",
+  "AMZN",
+  "GOOGL",
+  "META",
+  "TSLA",
+  "AVGO",
+  "JPM",
+  "V",
+  "LLY",
+  "WMT",
+  "SPY",
+  "QQQ",
+  "IWM",
+  "DIA",
+  "GLD",
+  "TLT",
+  "BTC-USD",
+  "ETH-USD",
+  "EURUSD=X",
+  "GBPUSD=X",
+  "JPY=X",
+  "^GSPC",
+  "^IXIC",
+  "^DJI"
+];
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -68,62 +96,84 @@ app.get("/api/analyze", async (req, res) => {
     return res.status(400).json({ error: "Unsupported interval." });
   }
 
-  const period2 = new Date();
-  const period1 = new Date(period2.getTime() - RANGE_DAYS[range] * 24 * 60 * 60 * 1000);
+  try {
+    res.json(await analyzeSymbol(symbol, range, interval, true));
+  } catch (error) {
+    const status = error.statusCode || 502;
+    res.status(status).json({
+      error: status === 404
+        ? error.message
+        : "Analysis failed. The free market data source may be unavailable or rate limited.",
+      details: cleanError(error)
+    });
+  }
+});
+
+app.get("/api/screener", async (req, res) => {
+  const range = String(req.query.range || "6mo");
+  const interval = String(req.query.interval || "1d");
+  const minimumScore = Number(req.query.minScore ?? -99);
+  const ratingFilter = String(req.query.rating || "All");
+  const symbols = parseScreenerSymbols(req.query.symbols);
+
+  if (!RANGE_DAYS[range]) {
+    return res.status(400).json({ error: "Unsupported range." });
+  }
+
+  if (!VALID_INTERVALS.has(interval)) {
+    return res.status(400).json({ error: "Unsupported interval." });
+  }
 
   try {
-    const [quoteResult, summaryResult, historyResult] = await Promise.allSettled([
-      yahooQuote(symbol),
-      yahooQuoteSummary(symbol, [
-        "assetProfile",
-        "summaryDetail",
-        "defaultKeyStatistics",
-        "financialData",
-        "price"
-      ]),
-      yahooHistorical(symbol, { period1, period2, interval })
-    ]);
+    const settled = await mapWithConcurrency(symbols, 5, async (symbol) => {
+      try {
+        return await analyzeSymbol(symbol, range, interval, false);
+      } catch (error) {
+        return {
+          symbol,
+          error: cleanError(error)
+        };
+      }
+    });
 
-    const quote = unwrapSettled(quoteResult);
-    const summary = unwrapSettled(summaryResult) || {};
-    const rawHistory = unwrapSettled(historyResult) || [];
-
-    const history = rawHistory
-      .filter((row) => row && row.date && isFiniteNumber(row.close))
-      .map((row) => ({
-        date: row.date.toISOString().slice(0, 10),
-        open: toNumber(row.open),
-        high: toNumber(row.high),
-        low: toNumber(row.low),
-        close: toNumber(row.close),
-        volume: toNumber(row.volume)
-      }));
-
-    if (!quote && history.length === 0) {
-      return res.status(404).json({
-        error: "No market data found for this symbol. Try the Yahoo Finance ticker format, such as BTC-USD or EURUSD=X."
-      });
-    }
-
-    const fundamentals = buildFundamentals(quote, summary);
-    const technicals = buildTechnicals(history);
-    const performance = buildPerformance(history);
-    const analysis = buildAnalysis(fundamentals, technicals, performance, quote);
+    const rows = settled
+      .filter((item) => !item.error)
+      .map((item) => ({
+        symbol: item.symbol,
+        name: item.quote.name,
+        type: item.quote.type,
+        exchange: item.quote.exchange,
+        price: item.quote.price,
+        volume: item.quote.volume,
+        rating: item.analysis.rating,
+        totalScore: item.analysis.totalScore,
+        fundamentalScore: item.analysis.fundamentalScore,
+        technicalScore: item.analysis.technicalScore,
+        oneMonth: item.performance.oneMonth,
+        threeMonth: item.performance.threeMonth,
+        ytd: item.performance.ytd,
+        rsi14: item.technicals.rsi14,
+        aboveSma50: item.technicals.aboveSma50,
+        aboveSma200: item.technicals.aboveSma200,
+        factors: [
+          ...(item.analysis.technicalFactors || []),
+          ...(item.analysis.fundamentalFactors || [])
+        ].slice(0, 3)
+      }))
+      .filter((row) => row.totalScore >= minimumScore)
+      .filter((row) => ratingFilter === "All" || row.rating === ratingFilter)
+      .sort((a, b) => b.totalScore - a.totalScore);
 
     res.json({
-      symbol,
       asOf: new Date().toISOString(),
-      quote: buildQuote(quote, history, symbol),
-      fundamentals,
-      technicals,
-      performance,
-      analysis,
-      history,
-      warnings: buildWarnings(quoteResult, summaryResult, historyResult, history, fundamentals)
+      scanned: symbols.length,
+      matched: rows.length,
+      rows,
+      failures: settled.filter((item) => item.error)
     });
   } catch (error) {
     res.status(502).json({
-      error: "Analysis failed. The free market data source may be unavailable or rate limited.",
+      error: "Screener failed. Try fewer symbols or a shorter range.",
       details: cleanError(error)
     });
   }
@@ -139,6 +189,61 @@ app.listen(PORT, () => {
 
 function unwrapSettled(result) {
   return result.status === "fulfilled" ? result.value : null;
+}
+
+async function analyzeSymbol(symbol, range, interval, includeHistory) {
+  const period2 = new Date();
+  const period1 = new Date(period2.getTime() - RANGE_DAYS[range] * 24 * 60 * 60 * 1000);
+
+  const [quoteResult, summaryResult, historyResult] = await Promise.allSettled([
+    yahooQuote(symbol),
+    yahooQuoteSummary(symbol, [
+      "assetProfile",
+      "summaryDetail",
+      "defaultKeyStatistics",
+      "financialData",
+      "price"
+    ]),
+    yahooHistorical(symbol, { period1, period2, interval })
+  ]);
+
+  const quote = unwrapSettled(quoteResult);
+  const summary = unwrapSettled(summaryResult) || {};
+  const rawHistory = unwrapSettled(historyResult) || [];
+
+  const history = rawHistory
+    .filter((row) => row && row.date && isFiniteNumber(row.close))
+    .map((row) => ({
+      date: row.date.toISOString().slice(0, 10),
+      open: toNumber(row.open),
+      high: toNumber(row.high),
+      low: toNumber(row.low),
+      close: toNumber(row.close),
+      volume: toNumber(row.volume)
+    }));
+
+  if (!quote && history.length === 0) {
+    const error = new Error("No market data found for this symbol. Try the Yahoo Finance ticker format, such as BTC-USD or EURUSD=X.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const fundamentals = buildFundamentals(quote, summary);
+  const technicals = buildTechnicals(history);
+  const performance = buildPerformance(history);
+  const analysis = buildAnalysis(fundamentals, technicals, performance, quote);
+
+  return {
+    symbol,
+    asOf: new Date().toISOString(),
+    quote: buildQuote(quote, history, symbol),
+    fundamentals,
+    technicals,
+    performance,
+    analysis,
+    history: includeHistory ? history : [],
+    warnings: buildWarnings(quoteResult, summaryResult, historyResult, history, fundamentals)
+  };
 }
 
 function buildQuote(quote, history, symbol) {
@@ -476,6 +581,34 @@ function formatNumber(value) {
 
 function cleanError(error) {
   return error?.message || "Unknown error";
+}
+
+function parseScreenerSymbols(value) {
+  const raw = String(value || "").trim();
+  const symbols = raw
+    ? raw.split(/[\s,;]+/)
+    : DEFAULT_SCREENER_SYMBOLS;
+
+  return [...new Set(symbols
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter(Boolean))]
+    .slice(0, 40);
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const results = [];
+  let index = 0;
+
+  async function runNext() {
+    const currentIndex = index;
+    index += 1;
+    if (currentIndex >= items.length) return;
+    results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    await runNext();
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext));
+  return results;
 }
 
 async function yahooSearch(q) {

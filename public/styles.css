@@ -26,7 +26,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -91,6 +92,7 @@ h3 {
 }
 
 .search-panel,
+.screener-panel,
 .chart-section,
 article,
 .notice {
@@ -102,6 +104,11 @@ article,
 
 .search-panel {
   padding: 16px;
+  margin-bottom: 18px;
+}
+
+.screener-panel {
+  padding: 18px;
   margin-bottom: 18px;
 }
 
@@ -125,9 +132,9 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
-  min-height: 46px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: #fbfcfd;
@@ -136,8 +143,20 @@ select {
   outline: none;
 }
 
+input,
+select {
+  min-height: 46px;
+}
+
+textarea {
+  min-height: 86px;
+  padding: 12px;
+  resize: vertical;
+}
+
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
 }
@@ -155,6 +174,11 @@ select:focus {
   min-height: 46px;
   background: var(--accent);
   color: white;
+}
+
+.compact-button {
+  min-width: 140px;
+  padding: 0 16px;
 }
 
 .primary-button:disabled {
@@ -219,6 +243,93 @@ select:focus {
 .dashboard {
   display: grid;
   gap: 18px;
+}
+
+.screener-controls {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 150px 150px;
+  gap: 12px;
+  margin-top: 16px;
+  align-items: end;
+}
+
+.screener-meta {
+  margin: 14px 0 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.screener-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  background: var(--surface);
+}
+
+.screener-table th,
+.screener-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 11px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.screener-table th {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.screener-table td {
+  font-size: 0.9rem;
+}
+
+.screener-table td:first-child span {
+  display: block;
+  max-width: 210px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.symbol-link {
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 900;
+  padding: 0;
+}
+
+.rating-badge {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.rating-bullish {
+  background: rgba(18, 128, 92, 0.12);
+  color: var(--good);
+}
+
+.rating-bearish {
+  background: rgba(180, 35, 24, 0.12);
+  color: var(--bad);
+}
+
+.rating-neutral {
+  background: rgba(103, 114, 129, 0.14);
+  color: var(--muted);
 }
 
 .summary-grid,
@@ -368,6 +479,7 @@ li + li {
   }
 
   .search-form,
+  .screener-controls,
   .summary-grid,
   .content-grid,
   .factor-columns {
