@@ -24,3 +24,14 @@ http://localhost:3000
 - `^GSPC` for an index
 
 The app uses free market data, so availability, delay, and field coverage vary by asset type and symbol.
+
+## Deploy on Render
+
+This repo includes `render.yaml`, so Render can create the web service from the blueprint.
+
+1. Open Render and choose **New +** then **Blueprint**.
+2. Connect `AndreImperial/Stock-Analyzer`.
+3. Select the `main` branch.
+4. Apply the blueprint.
+
+Render will run `npm install` and start the app with `npm start`.
