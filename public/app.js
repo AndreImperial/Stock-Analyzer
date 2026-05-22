@@ -12,6 +12,9 @@ const screenerRating = document.querySelector("#screenerRating");
 const screenerMinScore = document.querySelector("#screenerMinScore");
 const screenerMeta = document.querySelector("#screenerMeta");
 const screenerRows = document.querySelector("#screenerRows");
+const refreshNewsButton = document.querySelector("#refreshNews");
+const newsList = document.querySelector("#newsList");
+const newsTitle = document.querySelector("#newsTitle");
 const chart = document.querySelector("#priceChart");
 const ctx = chart.getContext("2d");
 
@@ -24,6 +27,10 @@ form.addEventListener("submit", (event) => {
 
 runScreenerButton.addEventListener("click", () => {
   runScreener();
+});
+
+refreshNewsButton.addEventListener("click", () => {
+  loadNews(symbolInput.value);
 });
 
 document.querySelectorAll("[data-symbol]").forEach((button) => {
@@ -113,12 +120,50 @@ async function analyze(symbol) {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Analysis failed");
     renderDashboard(payload);
+    loadNews(payload.symbol);
   } catch (error) {
     dashboard.hidden = true;
     showNotice(error.message || "Unable to analyze this symbol.");
   } finally {
     setLoading(false);
   }
+}
+
+async function loadNews(symbol) {
+  const cleanSymbol = String(symbol || "").trim();
+  if (!cleanSymbol) return;
+
+  newsTitle.textContent = `${cleanSymbol.toUpperCase()} headlines`;
+  newsList.innerHTML = `<p class="empty-state">Loading latest news...</p>`;
+  refreshNewsButton.disabled = true;
+
+  try {
+    const response = await fetch(`/api/news?symbol=${encodeURIComponent(cleanSymbol)}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "News unavailable");
+    renderNews(payload.news || []);
+  } catch (error) {
+    newsList.innerHTML = `<p class="empty-state">${escapeHtml(error.message || "News unavailable.")}</p>`;
+  } finally {
+    refreshNewsButton.disabled = false;
+  }
+}
+
+function renderNews(items) {
+  if (!items.length) {
+    newsList.innerHTML = `<p class="empty-state">No recent headlines found for this symbol.</p>`;
+    return;
+  }
+
+  newsList.innerHTML = items.map((item) => `
+    <a class="news-item" href="${escapeHtml(item.link)}" target="_blank" rel="noopener noreferrer">
+      ${item.thumbnail ? `<img src="${escapeHtml(item.thumbnail)}" alt="">` : ""}
+      <span>
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${escapeHtml([item.publisher, formatDateTime(item.publishedAt)].filter(Boolean).join(" | "))}</small>
+      </span>
+    </a>
+  `).join("");
 }
 
 async function runScreener() {
@@ -408,6 +453,11 @@ function formatPercentRatio(value) {
 function formatSigned(value) {
   if (!Number.isFinite(value)) return "N/A";
   return `${value > 0 ? "+" : ""}${formatNumber(value)}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString();
 }
 
 function numberClass(value) {

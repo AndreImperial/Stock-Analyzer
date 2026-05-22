@@ -79,6 +79,38 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
+app.get("/api/news", async (req, res) => {
+  const symbol = String(req.query.symbol || "").trim().toUpperCase();
+  const q = symbol || String(req.query.q || "markets").trim();
+
+  try {
+    const result = await yahooSearch(q, { quotesCount: 0, newsCount: 10 });
+    const news = (result.news || []).map((item) => ({
+      title: item.title || "",
+      publisher: item.publisher || "",
+      link: item.link || "",
+      providerPublishTime: item.providerPublishTime || null,
+      publishedAt: item.providerPublishTime
+        ? new Date(item.providerPublishTime * 1000).toISOString()
+        : null,
+      type: item.type || "",
+      thumbnail: item.thumbnail?.resolutions?.[0]?.url || ""
+    })).filter((item) => item.title && item.link);
+
+    res.json({
+      symbol,
+      query: q,
+      asOf: new Date().toISOString(),
+      news
+    });
+  } catch (error) {
+    res.status(502).json({
+      error: "Latest news is unavailable from the free data source right now.",
+      details: cleanError(error)
+    });
+  }
+});
+
 app.get("/api/analyze", async (req, res) => {
   const symbol = String(req.query.symbol || "").trim().toUpperCase();
   const range = String(req.query.range || "1y");
@@ -661,11 +693,11 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
-async function yahooSearch(q) {
+async function yahooSearch(q, options = {}) {
   return yahooGet("https://query2.finance.yahoo.com/v1/finance/search", {
     q,
-    quotesCount: 10,
-    newsCount: 0
+    quotesCount: options.quotesCount ?? 10,
+    newsCount: options.newsCount ?? 0
   });
 }
 
